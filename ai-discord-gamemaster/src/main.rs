@@ -1,12 +1,28 @@
 use axum::{response::Html, routing::get, Router};
-use serenity::{async_trait, model::gateway::Ready, prelude::*, Client};
+use serenity::{
+    async_trait,
+    model::{channel::Message, gateway::Ready},
+    prelude::*,
+    Client,
+};
 use std::env;
-use tracing::{debug, info};
+use tracing::info;
 
 struct Handler;
+
 #[async_trait]
 impl EventHandler for Handler {
+    async fn message(&self, ctx: Context, msg: Message) {
+        info!("Message: {:?}", msg);
+        if msg.content == "!hello" {
+            if let Err(why) = msg.channel_id.say(&ctx.http, "world!").await {
+                println!("Error sending message: {:?}", why);
+            }
+        }
+    }
+
     async fn ready(&self, _: Context, ready: Ready) {
+        info!("Ready event: {:?}", ready);
         println!("{} is connected!", ready.user.name);
     }
 }
@@ -24,8 +40,6 @@ async fn main() {
     // bot are present.
     let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
-    info!("Create client discord...");
-    info!(token);
     let mut client = Client::builder(&token, intents)
         .event_handler(Handler)
         .await
@@ -44,10 +58,6 @@ async fn main() {
             .unwrap();
     });
 
-    // Finally, start a single shard, and start listening to events.
-    //
-    // Shards will automatically attempt to reconnect, and will perform
-    // exponential backoff until it reconnects.
     if let Err(why) = client.start().await {
         println!("Client error: {:?}", why);
     }
