@@ -1,0 +1,21 @@
+{
+    // Use IntelliSense to learn about possible attributes.
+    // Hover to view descriptions of existing attributes.
+    // For more information, visit: https://go.microsoft.com/fwlink/?linkid=830387
+    "version": "0.2.0",
+    "configurations": [
+        {
+            "type": "lldb",
+            "request": "launch",
+            "name": "Debug",
+            "program": "${workspaceFolder}/ai-discord-gamemaster/target/debug/ai-discord-gamemaster",
+            "args": [],
+            "cwd": "${workspaceFolder}/ai-discord-gamemaster",
+            "env": {
+                "RUST_LOG": "info",
+                "RUST_BACKTRACE": "1",
+                "DISCORD_TOKEN": "MTMxMzI4MTcxNTgwODExMjY1MA.G_a320.cNJrHRH3Hry3LmT3SenhPtj0KWLKh4mM07U_64"
+            }
+        }
+    ]
+}
