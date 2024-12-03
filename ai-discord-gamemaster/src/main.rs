@@ -1,4 +1,5 @@
 use axum::{response::Html, routing::get, Router};
+use tracing::info;
 
 async fn hello_world() -> Html<&'static str> {
     Html("Hello, World!")
@@ -6,6 +7,9 @@ async fn hello_world() -> Html<&'static str> {
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt::init();
+    info!("Starting server...");
+
     // build our application with a route
     let app = Router::new().route("/", get(hello_world));
 
