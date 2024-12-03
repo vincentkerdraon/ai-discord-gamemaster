@@ -1,0 +1,1 @@
+//FIXME add screenshot of discord stupid configuration. 
