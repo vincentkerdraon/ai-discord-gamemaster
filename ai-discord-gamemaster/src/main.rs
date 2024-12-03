@@ -1,9 +1,3 @@
-use axum::{
-    extract::Json,
-    response::Html,
-    routing::{get, post},
-    Router,
-};
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -26,7 +20,7 @@ struct OpenAIMessage {
     role: String,
     content: String,
 }
-async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error>> {
+async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error + Send + Sync>> {
     let openai_api_key = env::var("AI_DISCORD_GM_OPENAI_API_KEY")?;
     let thread_id = env::var("AI_DISCORD_GM_OPENAI_THREAD_ID")?;
     let assistant_id = env::var("AI_DISCORD_GM_OPENAI_ASSISTANT_ID")?;
@@ -195,10 +189,38 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn message(&self, ctx: Context, msg: Message) {
-        info!("Message: {:?}", msg);
-        if msg.content == "!hello" {
-            if let Err(why) = msg.channel_id.say(&ctx.http, "world!").await {
-                println!("Error sending message: {:?}", why);
+        info!("Message received: {:?}", msg);
+
+        // Check if the message is a command (e.g., starts with !)
+        if msg.content.starts_with('!') {
+            let command = &msg.content[1..]; // Remove the !
+
+            if command == "ping" {
+                // Keep the !ping command for testing
+                if let Err(why) = msg.channel_id.say(&ctx.http, "pong").await {
+                    error!("Error sending message: {:?}", why);
+                }
+            } else {
+                // Treat other messages as prompts for OpenAI
+                let assistant_request = AssistantRequest {
+                    prompt: command.to_string(),
+                };
+
+                match run_completion(assistant_request).await {
+                    Ok(response) => {
+                        if let Err(why) = msg.channel_id.say(&ctx.http, &response).await {
+                            error!("Error sending message: {:?}", why);
+                        }
+                    }
+                    Err(e) => {
+                        error!("OpenAI error: {:?}", e);
+                        if let Err(why) =
+                            msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await
+                        {
+                            error!("Error sending error message: {:?}", why);
+                        }
+                    }
+                }
             }
         }
     }
@@ -220,39 +242,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .await
         .expect("Err creating client");
 
-    let _axum_handle = tokio::spawn(async move {
-        info!("Starting server...");
-
-        let app = Router::new()
-            .route("/", get(hello_world))
-            .route("/completion", post(completion));
-
-        axum::Server::bind(&"0.0.0.0:3000".parse().unwrap())
-            .serve(app.into_make_service())
-            .await
-            .unwrap();
-    });
-
     if let Err(why) = client.start().await {
         error!("Client error: {:?}", why);
     }
 
     Ok(())
-}
-
-//Existing functions
-async fn hello_world() -> Html<&'static str> {
-    Html("Hello, World!")
-}
-
-async fn completion(Json(payload): Json<AssistantRequest>) -> String {
-    info!("completion receive: {:?}", payload);
-
-    match run_completion(payload).await {
-        Ok(res) => res,
-        Err(e) => {
-            error!("completion {:?}", e);
-            format!("error {:?}", e)
-        }
-    }
 }
