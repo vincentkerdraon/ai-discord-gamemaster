@@ -1,14 +1,12 @@
 use reqwest::Client;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use serenity::prelude::Context;
 use serenity::{
     async_trait,
     model::{channel::Message, gateway::Ready},
     prelude::*,
-    Client as SerenityClient,
 };
-use songbird::input::{self, Input};
+use songbird::SerenityInit;
 use songbird::Songbird;
 use std::io::Read;
 use std::{env, error::Error, sync::Arc};
@@ -187,95 +185,49 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
 
     Ok(latest_message.to_string())
 }
-
-struct Handler {
-    manager: Arc<Songbird>,
-}
-
+struct Handler {}
 #[async_trait]
 impl EventHandler for Handler {
+    async fn ready(&self, _: Context, ready: Ready) {
+        info!("{} is connected!", ready.user.name);
+    }
+
     async fn message(&self, ctx: Context, msg: Message) {
         info!("Message received: {:?}", msg);
 
-        // Check if the message is a command (e.g., starts with !)
         if !msg.content.starts_with('!') {
             return;
         }
 
         let command = &msg.content[1..]; // Remove the !
-
         match command.split_whitespace().next() {
             Some("ping") => {
-                // Keep the !ping command for testing
                 if let Err(why) = msg.channel_id.say(&ctx.http, "pong").await {
                     error!("Error sending message: {:?}", why);
                 }
             }
             Some("play") => {
-                let audio_path = "../assets/speech.mp3";
-
-                // Read the file contents into a byte vector
-                let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
-                let mut audio_data = Vec::new();
-                file.read_to_end(&mut audio_data)
-                    .expect("Failed to read file data");
-
-                let guild_id = match msg.guild_id {
-                    Some(id) => id,
-                    None => {
-                        msg.channel_id
-                            .say(&ctx.http, "This command can only be used in a guild.")
-                            .await
-                            .unwrap();
-                        return;
-                    }
-                };
-
-                // Fetch the guild from the cache or API
-                let guild = match ctx.cache.guild(guild_id) {
-                    Some(guild) => guild,
-                    None => {
-                        msg.channel_id
-                            .say(&ctx.http, "Could not fetch guild information.")
-                            .await
-                            .unwrap();
-                        return;
-                    }
-                };
-
-                let channel_id = guild
-                    .voice_states
-                    .get(&msg.author.id)
-                    .and_then(|state| state.channel_id);
-                if let Some(channel_id) = channel_id {
-                    let manager = self.manager.clone();
-                    let channel_id: songbird::id::ChannelId = channel_id.into(); // Explicit conversion
-                    match manager.join(guild_id, channel_id).await {
-                        Ok(handle_lock) => {
-                            let mut handle = handle_lock.lock().await;
-
-                            let source = songbird::input::Input::from(audio_data);
-                            handle.play(source.into());
-
-                            msg.channel_id
-                                .say(&ctx.http, "Playing audio.")
-                                .await
-                                .unwrap();
-                        }
-                        Err(e) => {
-                            error!("Failed to join voice channel: {:?}", e);
-                            msg.channel_id
-                                .say(&ctx.http, "Error joining voice channel.")
-                                .await
-                                .unwrap();
-                        }
-                    }
-                } else {
+                if msg.guild_id.is_none() {
+                    error!("Not in a guild=server");
                     msg.channel_id
-                        .say(&ctx.http, "Join a voice channel first.")
+                        .say(&ctx.http, "Not in a guild=server.")
                         .await
                         .unwrap();
+                    return;
                 }
+
+                //FIXME get the manager from ctx instead of self
+                let manager = songbird::get(&ctx)
+                    .await
+                    .expect("Songbird Voice client placed in at initialisation.")
+                    .clone();
+                let http = ctx.http.clone();
+
+                tokio::spawn(async move {
+                    if let Err(why) = handle_play(manager, http, msg).await {
+                        error!("Error handling play command: {:?}", why);
+                    }
+                });
             }
             _ => {
                 // Treat other messages as prompts for OpenAI
@@ -301,10 +253,59 @@ impl EventHandler for Handler {
             }
         }
     }
+}
 
-    async fn ready(&self, _: Context, ready: Ready) {
-        info!("{} is connected!", ready.user.name);
+async fn handle_play(
+    manager: Arc<Songbird>,
+    http: Arc<serenity::http::Http>,
+    msg: Message,
+) -> Result<(), String> {
+    let guild_id = match msg.guild_id {
+        Some(id) => id,
+        None => return Err("This command can only be used in a guild.".to_string()),
+    };
+
+    //FIXME assume the current channel is voice
+    let channel_id = msg.channel_id;
+
+    let _ = channel_id
+        .say(
+            &http,
+            format!("Ready join voice channel: {:?} ...", channel_id),
+        )
+        .await;
+
+    match manager.join(guild_id, channel_id).await {
+        Ok(handle_lock) => {
+            let mut handle = handle_lock.lock().await;
+            let audio_path = "../assets/speech.mp3";
+            let audio_data = match read_audio_file(audio_path) {
+                Ok(data) => data,
+                Err(e) => return Err(e.to_string()),
+            };
+            let source = songbird::input::Input::from(audio_data);
+            handle.play(source.into());
+        }
+        Err(e) => {
+            let _ = channel_id
+                .say(&http, format!("Failed to join voice channel: {:?}", e))
+                .await;
+
+            return Err(format!("Failed to join voice channel: {:?}", e));
+        }
     }
+
+    Ok(())
+}
+
+fn read_audio_file(audio_path: &str) -> Result<Vec<u8>, Box<dyn Error>> {
+    // Read the file contents into a byte vector
+    let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
+    let mut audio_data = Vec::new();
+    file.read_to_end(&mut audio_data)
+        .expect("Failed to read file data");
+
+    Ok(audio_data)
 }
 
 #[tokio::main]
@@ -314,14 +315,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let token = env::var("AI_DISCORD_GM_DISCORD_TOKEN")?;
     let intents = GatewayIntents::GUILD_MESSAGES | GatewayIntents::MESSAGE_CONTENT;
 
-    // Initialize Songbird
-    let manager = Songbird::serenity();
-
-    let mut client = SerenityClient::builder(&token, intents)
-        .event_handler(Handler {
-            manager: manager.clone(),
-        })
-        // .register_songbird(manager.clone()) //FIXME needed?
+    let mut client = serenity::Client::builder(&token, intents)
+        .event_handler(Handler {})
+        .register_songbird()
         .await
         .expect("Err creating client");
 
