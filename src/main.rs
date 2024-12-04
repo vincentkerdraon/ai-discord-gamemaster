@@ -9,6 +9,7 @@
 // https://github.com/rust-lang/rust/issues/133864
 
 use std::io::Read;
+use std::time::Duration;
 use std::{env, error::Error};
 
 // This trait adds the `register_songbird` and `register_songbird_with` methods
@@ -67,7 +68,8 @@ impl EventHandler for Handler {
 
 #[group]
 #[commands(
-    deafen, join, leave, mute, play, ping, undeafen, unmute, help, report, play2, report2
+    deafen, join, leave, mute, play, ping, undeafen, unmute, help, report, play2, report2, react1,
+    react2, react3
 )]
 struct General;
 
@@ -733,5 +735,90 @@ async fn report2(ctx: &Context, msg: &Message) -> CommandResult {
             check_msg(msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await);
         }
     }
+    Ok(())
+}
+
+use serenity::model::prelude::ReactionType;
+
+#[command]
+async fn react1(ctx: &Context, msg: &Message) -> CommandResult {
+    match msg
+        .react(&ctx.http, ReactionType::Unicode("🔊".to_string()))
+        .await
+    {
+        Ok(_) => Ok(()),
+        Err(why) => {
+            check_msg(
+                msg.reply(ctx, &format!("Failed to add reaction: {:?}", why))
+                    .await,
+            );
+            Err(why.into()) // Propagate the error for logging and better debugging
+        }
+    }
+}
+
+#[command]
+async fn react2(ctx: &Context, msg: &Message) -> CommandResult {
+    let content = msg.content[8..].to_string();
+    info!("content = {}", content);
+
+    let reaction_type = match content.as_str() {
+        "recycle" | "♻️" => ReactionType::Unicode("♻️".to_string()),
+        "speaker" | "sound" | "🔊" => ReactionType::Unicode("🔊".to_string()),
+        _ => {
+            check_msg(
+                msg.reply(
+                    ctx,
+                    "Invalid reaction type. Use 'recycle', '♻️', 'speaker', 'sound', or '🔊'",
+                )
+                .await,
+            );
+            return Ok(());
+        }
+    };
+
+    // Add error handling for reaction addition, including rate limits and permission issues
+    match msg.react(&ctx.http, reaction_type).await {
+        Ok(_) => Ok(()),
+        Err(why) => {
+            check_msg(
+                msg.reply(ctx, &format!("Failed to add reaction: {:?}", why))
+                    .await,
+            );
+            Err(why.into()) // Propagate the error for logging and better debugging
+        }
+    }
+}
+
+#[command]
+async fn react3(ctx: &Context, msg: &Message) -> CommandResult {
+    // React to the message with a specific emoji
+    msg.react(&ctx.http, ReactionType::Unicode("🔊".to_string()))
+        .await?;
+
+    // Set up a reaction collector
+    if let Some(reaction) = &msg
+        .await_reaction(&ctx)
+        .timeout(Duration::from_secs(60)) // How long to wait for a reaction
+        .author_id(msg.author.id) // Only listen to the message author's reactions
+        .await
+    {
+        // Check if the reaction matches the one we added
+        if let ReactionType::Unicode(ref emoji) = reaction.emoji {
+            if emoji == "🔊" {
+                // Do something when the user reacts with the specified emoji
+                msg.reply(&ctx.http, "You clicked the 🔊 reaction!").await?;
+            } else {
+                // Handle unexpected reactions
+                msg.reply(&ctx.http, "That's not the reaction I was looking for!")
+                    .await?;
+            }
+        }
+    } else {
+        // Timeout case: no reaction received
+        msg.reply(&ctx.http, "No reaction received in time.")
+            .await?;
+    }
+
     Ok(())
 }
