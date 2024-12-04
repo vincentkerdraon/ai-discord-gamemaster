@@ -14,8 +14,10 @@
             "env": {
                 "RUST_LOG": "info",
                 "RUST_BACKTRACE": "1",
-                "DISCORD_TOKEN": "MTMxMzI4MTcxNTgwODExMjY1MA.G_a320.cNJrHRH3Hry3LmT3SenhPtj0KWLKh4mM07U_64"
-            }
+                "RUST_MIN_STACK": "16777216",
+            },
+            //Secrets here
+            "envFile": "${workspaceFolder}/.env",
         }
     ]
 }

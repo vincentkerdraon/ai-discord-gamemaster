@@ -1,1 +1,4 @@
 /ai-discord-gamemaster/target
+.env
+/songbird
+/target
