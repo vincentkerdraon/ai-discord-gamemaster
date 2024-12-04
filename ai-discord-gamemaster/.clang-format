@@ -1,5 +1,0 @@
-# Tell clangd to ignore errors within ~/.cargo
----
-Checks:
-  - CheckName: Readability-UnknownWord
-    Ignore: true
