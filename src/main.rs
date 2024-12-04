@@ -45,7 +45,10 @@ use serenity::{
 
 use serde::{Deserialize, Serialize};
 use serde_json::json;
+use tokio::io::AsyncWriteExt;
 use tracing::info;
+
+use futures::StreamExt;
 
 struct HttpKey;
 
@@ -64,7 +67,7 @@ impl EventHandler for Handler {
 
 #[group]
 #[commands(
-    deafen, join, leave, mute, play, ping, undeafen, unmute, help, report, play2
+    deafen, join, leave, mute, play, ping, undeafen, unmute, help, report, play2, report2
 )]
 struct General;
 
@@ -615,7 +618,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
 //FIXME debug, play a local audio
 #[command]
 #[only_in(guilds)]
-async fn play2(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+async fn play2(ctx: &Context, msg: &Message) -> CommandResult {
     let guild_id = msg.guild_id.unwrap();
 
     let manager = songbird::get(ctx)
@@ -643,5 +646,92 @@ async fn play2(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         );
     }
 
+    Ok(())
+}
+
+//FIXME The maximum length is 4096 characters.
+async fn text_to_speech(
+    text: &str,
+    destination_path: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let openai_api_key = env::var("AI_DISCORD_GM_OPENAI_API_KEY")?;
+    let client = reqwest::Client::new();
+
+    let response = client
+        .post("https://api.openai.com/v1/audio/speech")
+        .header("Authorization", format!("Bearer {}", openai_api_key))
+        .header("Content-Type", "application/json")
+        .json(&json!({
+            "model": "tts-1", //FIXME try tts-1-hd
+            "input": text,
+            "response_format": "mp3",
+            "voice": "onyx"
+        }))
+        .send()
+        .await?;
+
+    if !response.status().is_success() {
+        let err_text = response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(format!("Error generating speech: {}", err_text).into());
+    }
+
+    let mut file = tokio::fs::File::create(destination_path).await?;
+    let mut content = response.bytes_stream();
+
+    while let Some(item) = content.next().await {
+        let chunk = item?;
+        file.write_all(&chunk).await?;
+    }
+
+    Ok(())
+}
+
+//FIXME debug
+#[command]
+async fn report2(ctx: &Context, msg: &Message) -> CommandResult {
+    let assistant_request = AssistantRequest {
+        prompt: msg.content[8..].to_string(),
+    };
+    match run_completion(assistant_request).await {
+        Ok(response) => {
+            check_msg(msg.channel_id.say(&ctx.http, &response).await);
+            text_to_speech(&response, "assets/speech1.mp3")
+                .await
+                .unwrap();
+
+            let guild_id = msg.guild_id.unwrap();
+
+            let manager = songbird::get(ctx)
+                .await
+                .expect("Songbird Voice client placed in at initialisation.")
+                .clone();
+
+            if let Some(handler_lock) = manager.get(guild_id) {
+                let mut handler = handler_lock.lock().await;
+
+                let audio_path = "assets/speech1.mp3";
+                let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
+                let mut audio_data = Vec::new();
+                file.read_to_end(&mut audio_data)
+                    .expect("Failed to read file data");
+                let src = songbird::input::Input::from(audio_data);
+                let _ = handler.play_input(src.into());
+
+                check_msg(msg.channel_id.say(&ctx.http, "Playing transcript").await);
+            } else {
+                check_msg(
+                    msg.channel_id
+                        .say(&ctx.http, "Not in a voice channel to play in")
+                        .await,
+                );
+            }
+        }
+        Err(e) => {
+            check_msg(msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await);
+        }
+    }
     Ok(())
 }
