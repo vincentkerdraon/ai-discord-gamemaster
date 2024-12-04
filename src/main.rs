@@ -392,15 +392,15 @@ async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
 #[command]
 async fn help(ctx: &Context, msg: &Message) -> CommandResult {
     let help_text = "Available commands:
-- ~ping: Responds with 'Pong!'
-- ~join: Joins the voice channel you are currently in.
-- ~leave: Leaves the current voice channel.
-- ~play <url/search term>: Plays an audio track from a URL or searches YouTube.
-- ~mute: Mutes the bot in the voice channel.
-- ~unmute: Unmutes the bot in the voice channel.
-- ~deafen: Deafens the bot in the voice channel.
-- ~undeafen: Undeafens the bot in the voice channel.
-- ~report <text>: Sends the provided text to the game master assistant and displays the response.";
+- !ping: Responds with 'Pong!'
+- !join: Joins the voice channel you are currently in.
+- !leave: Leaves the current voice channel.
+- !play <url/search term>: Plays an audio track from a URL or searches YouTube.
+- !mute: Mutes the bot in the voice channel.
+- !unmute: Unmutes the bot in the voice channel.
+- !deafen: Deafens the bot in the voice channel.
+- !undeafen: Undeafens the bot in the voice channel.
+- !report <text>: Sends the provided text to the game master assistant and displays the response.";
 
     check_msg(msg.channel_id.say(&ctx.http, help_text).await);
     Ok(())

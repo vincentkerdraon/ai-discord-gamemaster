@@ -2,7 +2,7 @@
 
 ## Setup OpenAI
 
-Code assumes that assistant + thread + run already exists.
+Code assumes that assistant + thread already exists.
 Create manually if needed.
 
 ### Assistant
