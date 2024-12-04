@@ -1,7 +1,8 @@
-
 // stolen from https://github.com/serenity-rs/songbird/blob/current/examples/serenity/voice/src/main.rs
 // (I had my own code, but it would fail when joining and I never figured why)
 // This is working out of the box
+// But with deprecation warnings
+#![allow(deprecated)]
 
 // Compiler error in rustc 1.83.0
 // Working in rustc 1.84.0-beta.3
@@ -32,9 +33,7 @@ use serenity::{
     framework::{
         standard::{
             macros::{command, group},
-            Args,
-            CommandResult,
-            Configuration,
+            Args, CommandResult, Configuration,
         },
         StandardFramework,
     },
@@ -114,7 +113,7 @@ async fn deafen(ctx: &Context, msg: &Message) -> CommandResult {
             check_msg(msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
-        },
+        }
     };
 
     let mut handler = handler_lock.lock().await;
@@ -155,7 +154,7 @@ async fn join(ctx: &Context, msg: &Message) -> CommandResult {
             check_msg(msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
-        },
+        }
     };
 
     let manager = songbird::get(ctx)
@@ -235,7 +234,7 @@ async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
             check_msg(msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
-        },
+        }
     };
 
     let mut handler = handler_lock.lock().await;
@@ -276,7 +275,7 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
             );
 
             return Ok(());
-        },
+        }
     };
 
     let do_search = !url.starts_with("http");
@@ -298,7 +297,7 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
 
-        let mut src = if do_search {
+        let src = if do_search {
             YoutubeDl::new_search(http_client, url)
         } else {
             YoutubeDl::new(http_client, url)
