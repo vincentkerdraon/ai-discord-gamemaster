@@ -8,7 +8,8 @@
 // Working in rustc 1.84.0-beta.3
 // https://github.com/rust-lang/rust/issues/133864
 
-use std::env;
+use std::io::Read;
+use std::{env, error::Error};
 
 // This trait adds the `register_songbird` and `register_songbird_with` methods
 // to the client builder below, making it easy to install this voice client.
@@ -42,6 +43,10 @@ use serenity::{
     Result as SerenityResult,
 };
 
+use serde::{Deserialize, Serialize};
+use serde_json::json;
+use tracing::info;
+
 struct HttpKey;
 
 impl TypeMapKey for HttpKey {
@@ -58,7 +63,9 @@ impl EventHandler for Handler {
 }
 
 #[group]
-#[commands(deafen, join, leave, mute, play, ping, undeafen, unmute)]
+#[commands(
+    deafen, join, leave, mute, play, ping, undeafen, unmute, help, report, play2
+)]
 struct General;
 
 #[tokio::main]
@@ -66,10 +73,11 @@ async fn main() {
     tracing_subscriber::fmt::init();
 
     // Configure the client with your Discord bot token in the environment.
-    let token = env::var("DISCORD_TOKEN").expect("Expected token DISCORD_TOKEN in the environment");
+    let token = env::var("AI_DISCORD_GM_DISCORD_TOKEN")
+        .expect("Expected token AI_DISCORD_GM_DISCORD_TOKEN in the environment");
 
     let framework = StandardFramework::new().group(&GENERAL_GROUP);
-    framework.configure(Configuration::new().prefix("~"));
+    framework.configure(Configuration::new().prefix("!"));
 
     let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
 
@@ -380,9 +388,260 @@ async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
+//Custom command to display other commands
+#[command]
+async fn help(ctx: &Context, msg: &Message) -> CommandResult {
+    let help_text = "Available commands:
+- ~ping: Responds with 'Pong!'
+- ~join: Joins the voice channel you are currently in.
+- ~leave: Leaves the current voice channel.
+- ~play <url/search term>: Plays an audio track from a URL or searches YouTube.
+- ~mute: Mutes the bot in the voice channel.
+- ~unmute: Unmutes the bot in the voice channel.
+- ~deafen: Deafens the bot in the voice channel.
+- ~undeafen: Undeafens the bot in the voice channel.
+- ~report <text>: Sends the provided text to the game master assistant and displays the response.";
+
+    check_msg(msg.channel_id.say(&ctx.http, help_text).await);
+    Ok(())
+}
+
+//Custom command to call AI
+#[command]
+async fn report(ctx: &Context, msg: &Message) -> CommandResult {
+    let assistant_request = AssistantRequest {
+        prompt: msg.content[8..].to_string(),
+    };
+    match run_completion(assistant_request).await {
+        Ok(response) => {
+            check_msg(msg.channel_id.say(&ctx.http, &response).await);
+        }
+        Err(e) => {
+            check_msg(msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await);
+        }
+    }
+    Ok(())
+}
+
 /// Checks that a message successfully sent; if not, then logs why to stdout.
 fn check_msg(result: SerenityResult<Message>) {
     if let Err(why) = result {
         println!("Error sending message: {:?}", why);
     }
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct AssistantRequest {
+    prompt: String,
+}
+
+#[derive(Deserialize, Serialize, Debug)]
+struct OpenAIMessage {
+    role: String,
+    content: String,
+}
+async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error + Send + Sync>> {
+    let openai_api_key = env::var("AI_DISCORD_GM_OPENAI_API_KEY")
+        .expect("Expected token AI_DISCORD_GM_OPENAI_API_KEY in the environment");
+    let thread_id = env::var("AI_DISCORD_GM_OPENAI_THREAD_ID")
+        .expect("Expected token AI_DISCORD_GM_OPENAI_THREAD_ID in the environment");
+    let assistant_id = env::var("AI_DISCORD_GM_OPENAI_ASSISTANT_ID")
+        .expect("Expected token AI_DISCORD_GM_OPENAI_ASSISTANT_ID in the environment");
+    let client = reqwest::Client::new();
+
+    // Step 1: Send a message to the thread
+    let message_resp = client
+        .post(format!(
+            "https://api.openai.com/v1/threads/{}/messages",
+            thread_id
+        ))
+        .header("Authorization", format!("Bearer {}", openai_api_key))
+        .header("OpenAI-Beta", "assistants=v2")
+        .json(&json!({
+            "role": "user",
+            "content": req.prompt,
+        }))
+        .send()
+        .await?;
+
+    info!(
+        "POST https://api.openai.com/v1/threads/{}/messages {:?}",
+        //no json data here, we only care whether status is OK
+        thread_id,
+        message_resp
+    );
+
+    if !message_resp.status().is_success() {
+        let err_text = message_resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(format!("Error sending message: {}", err_text).into());
+    }
+
+    // Step 2: Create a run
+    let run_resp = client
+        .post(format!(
+            "https://api.openai.com/v1/threads/{}/runs",
+            thread_id
+        ))
+        .header("Authorization", format!("Bearer {}", openai_api_key))
+        .header("OpenAI-Beta", "assistants=v2")
+        .json(&json!({            "assistant_id": assistant_id,        }))
+        .send()
+        .await?;
+
+    info!(
+        "POST https://api.openai.com/v1/threads/{}/runs {:?}",
+        thread_id, run_resp
+    );
+    if !run_resp.status().is_success() {
+        // ... (Error handling as before)
+        let err_text = run_resp
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(format!("Error creating run: {}", err_text).into());
+    }
+    let run_resp_data: serde_json::Value = run_resp.json().await?;
+    info!(
+        "POST https://api.openai.com/v1/threads/{}/runs {:?}",
+        thread_id, run_resp_data
+    );
+
+    let run_id = run_resp_data
+        .get("id")
+        .and_then(|id| id.as_str())
+        .ok_or("No run id found")?;
+
+    // Step 3: Wait for the run to complete
+    let mut run_status = String::from("queued"); // or whatever the initial status is
+    let mut run_status_data: serde_json::Value = serde_json::Value::Object(serde_json::Map::new());
+    while run_status == "queued" || run_status == "in_progress" {
+        tokio::time::sleep(std::time::Duration::from_secs(1)).await; // Check every second
+
+        let run_status_resp = client
+            .get(format!(
+                "https://api.openai.com/v1/threads/{}/runs/{}/steps",
+                thread_id, run_id
+            ))
+            .header("Authorization", format!("Bearer {}", openai_api_key))
+            .header("OpenAI-Beta", "assistants=v2")
+            .send()
+            .await?;
+        if !run_status_resp.status().is_success() {
+            // ... (Error handling as before)
+            let err_text = run_status_resp
+                .text()
+                .await
+                .unwrap_or_else(|_| "Unknown error".to_string());
+            return Err(format!("Error checking run status: {}", err_text).into());
+        }
+
+        run_status_data = run_status_resp.json().await?;
+        info!(
+            "GET https://api.openai.com/v1/threads/{}/runs/{}/steps {:?}",
+            thread_id, run_id, run_status_data
+        );
+
+        run_status = run_status_data
+            .get("data") // Access the "data" array
+            .and_then(|data| data.as_array())
+            .and_then(|array| array.first()) // Get the first step (most recent)
+            .and_then(|step| step.get("status"))
+            .and_then(|status| status.as_str())
+            .map(String::from)
+            .unwrap_or_else(|| "unknown".to_string());
+    }
+
+    if run_status_data.is_null() {
+        return Err(format!("Error checking run_status_json").into());
+    }
+
+    //FIXME
+    info!(
+        "DEBUG LAST GET https://api.openai.com/v1/threads/{}/runs/{}/steps {:?} ; run_status={}",
+        thread_id, run_id, run_status_data, run_status
+    );
+
+    let message_id = run_status_data
+        .get("data")
+        .and_then(|data| data.as_array())
+        .and_then(|array| array.first()) // Get the first step
+        .and_then(|step| step.get("step_details"))
+        .and_then(|details| details.get("message_creation"))
+        .and_then(|msg_creation| msg_creation.get("message_id"))
+        .and_then(|id| id.as_str())
+        .map(String::from)
+        .ok_or("message_id not found in step details")?;
+
+    // Step 4: Retrieve the message (after run completion)
+    let message_response: reqwest::Response = client
+        .get(format!(
+            "https://api.openai.com/v1/threads/{}/messages/{}",
+            thread_id, message_id
+        ))
+        .header("Authorization", format!("Bearer {}", openai_api_key))
+        .header("OpenAI-Beta", "assistants=v2")
+        .send()
+        .await?;
+
+    if !message_response.status().is_success() {
+        let err_text = message_response
+            .text()
+            .await
+            .unwrap_or_else(|_| "Unknown error".to_string());
+        return Err(format!("Error retrieving message: {}", err_text).into());
+    }
+
+    let message_data: serde_json::Value = message_response.json().await?;
+    info!(
+        "GET https://api.openai.com/v1/threads/{}/messages/{} {:?}",
+        thread_id, message_id, message_data
+    );
+
+    let latest_message = message_data
+        .get("content")
+        .and_then(|content| content.as_array())
+        .and_then(|array| array.first())
+        .and_then(|content_obj| content_obj.get("text"))
+        .and_then(|text_obj| text_obj.get("value"))
+        .and_then(|value| value.as_str())
+        .ok_or("No message content found")?;
+
+    Ok(latest_message.to_string())
+}
+
+//FIXME debug, play a local audio
+#[command]
+#[only_in(guilds)]
+async fn play2(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap();
+
+    let manager = songbird::get(ctx)
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let mut handler = handler_lock.lock().await;
+
+        let audio_path = "assets/speech.mp3";
+        let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
+        let mut audio_data = Vec::new();
+        file.read_to_end(&mut audio_data)
+            .expect("Failed to read file data");
+        let src = songbird::input::Input::from(audio_data);
+        let _ = handler.play_input(src.into());
+
+        check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
+    } else {
+        check_msg(
+            msg.channel_id
+                .say(&ctx.http, "Not in a voice channel to play in")
+                .await,
+        );
+    }
+
+    Ok(())
 }
