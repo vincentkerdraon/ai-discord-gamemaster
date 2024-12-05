@@ -266,6 +266,7 @@ async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
 #[command]
 async fn help(ctx: &Context, msg: &Message) -> CommandResult {
     let help_text = "Available commands:\n\
+        - !help: Displays this help message.\n\
         - !ping: Responds with 'Pong!'\n\
         - !join: Joins the voice channel you are currently in.\n\
         - !leave: Leaves the current voice channel.\n\
@@ -562,7 +563,7 @@ fn pre_prompt(user: &serenity::model::user::User) -> &str {
     match user.id.get() {
         607653619122307123 => "Comm dit:",
         374989552646881281 => "Explo dit:",
-        3 => "Secu dit:",
+        518896639608619022 => "Secu dit:",
         _ => {
             warn!("Unknown user id={}", user.id);
             return "";
