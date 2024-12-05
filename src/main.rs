@@ -21,7 +21,7 @@ use songbird::SerenityInit;
 use songbird::events::{Event, EventContext, EventHandler as VoiceEventHandler, TrackEvent};
 
 // To turn user URLs into playable audio, we'll use yt-dlp.
-use songbird::input::YoutubeDl;
+use songbird::input::{Input, YoutubeDl};
 
 // YtDl requests need an HTTP client to operate -- we'll create and store our own.
 use reqwest::Client as HttpClient;
@@ -39,7 +39,7 @@ use serenity::{
         },
         StandardFramework,
     },
-    model::{channel::Message, gateway::Ready},
+    model::{channel::Message, gateway::Ready, prelude::ReactionType},
     prelude::{GatewayIntents, TypeMapKey},
     Result as SerenityResult,
 };
@@ -67,10 +67,7 @@ impl EventHandler for Handler {
 }
 
 #[group]
-#[commands(
-    deafen, join, leave, mute, play, ping, undeafen, unmute, help, report, play2, report2, react1,
-    react2, react3
-)]
+#[commands(deafen, join, leave, mute, play, ping, undeafen, unmute, help, report)]
 struct General;
 
 #[tokio::main]
@@ -123,7 +120,7 @@ async fn deafen(ctx: &Context, msg: &Message) -> CommandResult {
     let handler_lock = match manager.get(guild_id) {
         Some(handler) => handler,
         None => {
-            check_msg(msg.reply(ctx, "Not in a voice channel").await);
+            check_msg(&msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
         }
@@ -132,17 +129,17 @@ async fn deafen(ctx: &Context, msg: &Message) -> CommandResult {
     let mut handler = handler_lock.lock().await;
 
     if handler.is_deaf() {
-        check_msg(msg.channel_id.say(&ctx.http, "Already deafened").await);
+        check_msg(&msg.channel_id.say(&ctx.http, "Already deafened").await);
     } else {
         if let Err(e) = handler.deafen(true).await {
             check_msg(
-                msg.channel_id
+                &msg.channel_id
                     .say(&ctx.http, format!("Failed: {:?}", e))
                     .await,
             );
         }
 
-        check_msg(msg.channel_id.say(&ctx.http, "Deafened").await);
+        check_msg(&msg.channel_id.say(&ctx.http, "Deafened").await);
     }
 
     Ok(())
@@ -164,7 +161,7 @@ async fn join(ctx: &Context, msg: &Message) -> CommandResult {
     let connect_to = match channel_id {
         Some(channel) => channel,
         None => {
-            check_msg(msg.reply(ctx, "Not in a voice channel").await);
+            check_msg(&msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
         }
@@ -217,15 +214,15 @@ async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
     if has_handler {
         if let Err(e) = manager.remove(guild_id).await {
             check_msg(
-                msg.channel_id
+                &msg.channel_id
                     .say(&ctx.http, format!("Failed: {:?}", e))
                     .await,
             );
         }
 
-        check_msg(msg.channel_id.say(&ctx.http, "Left voice channel").await);
+        check_msg(&msg.channel_id.say(&ctx.http, "Left voice channel").await);
     } else {
-        check_msg(msg.reply(ctx, "Not in a voice channel").await);
+        check_msg(&msg.reply(ctx, "Not in a voice channel").await);
     }
 
     Ok(())
@@ -244,7 +241,7 @@ async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
     let handler_lock = match manager.get(guild_id) {
         Some(handler) => handler,
         None => {
-            check_msg(msg.reply(ctx, "Not in a voice channel").await);
+            check_msg(&msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
         }
@@ -253,17 +250,17 @@ async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
     let mut handler = handler_lock.lock().await;
 
     if handler.is_mute() {
-        check_msg(msg.channel_id.say(&ctx.http, "Already muted").await);
+        check_msg(&msg.channel_id.say(&ctx.http, "Already muted").await);
     } else {
         if let Err(e) = handler.mute(true).await {
             check_msg(
-                msg.channel_id
+                &msg.channel_id
                     .say(&ctx.http, format!("Failed: {:?}", e))
                     .await,
             );
         }
 
-        check_msg(msg.channel_id.say(&ctx.http, "Now muted").await);
+        check_msg(&msg.channel_id.say(&ctx.http, "Now muted").await);
     }
 
     Ok(())
@@ -271,7 +268,7 @@ async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
-    check_msg(msg.channel_id.say(&ctx.http, "Pong!").await);
+    check_msg(&msg.channel_id.say(&ctx.http, "Pong!").await);
     Ok(())
 }
 
@@ -282,7 +279,7 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         Ok(url) => url,
         Err(_) => {
             check_msg(
-                msg.channel_id
+                &msg.channel_id
                     .say(&ctx.http, "Must provide a URL to a video or audio")
                     .await,
             );
@@ -317,10 +314,10 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         };
         let _ = handler.play_input(src.clone().into());
 
-        check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
+        check_msg(&msg.channel_id.say(&ctx.http, "Playing song").await);
     } else {
         check_msg(
-            msg.channel_id
+            &msg.channel_id
                 .say(&ctx.http, "Not in a voice channel to play in")
                 .await,
         );
@@ -343,16 +340,16 @@ async fn undeafen(ctx: &Context, msg: &Message) -> CommandResult {
         let mut handler = handler_lock.lock().await;
         if let Err(e) = handler.deafen(false).await {
             check_msg(
-                msg.channel_id
+                &msg.channel_id
                     .say(&ctx.http, format!("Failed: {:?}", e))
                     .await,
             );
         }
 
-        check_msg(msg.channel_id.say(&ctx.http, "Undeafened").await);
+        check_msg(&msg.channel_id.say(&ctx.http, "Undeafened").await);
     } else {
         check_msg(
-            msg.channel_id
+            &msg.channel_id
                 .say(&ctx.http, "Not in a voice channel to undeafen in")
                 .await,
         );
@@ -375,16 +372,16 @@ async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
         let mut handler = handler_lock.lock().await;
         if let Err(e) = handler.mute(false).await {
             check_msg(
-                msg.channel_id
+                &msg.channel_id
                     .say(&ctx.http, format!("Failed: {:?}", e))
                     .await,
             );
         }
 
-        check_msg(msg.channel_id.say(&ctx.http, "Unmuted").await);
+        check_msg(&msg.channel_id.say(&ctx.http, "Unmuted").await);
     } else {
         check_msg(
-            msg.channel_id
+            &msg.channel_id
                 .say(&ctx.http, "Not in a voice channel to unmute in")
                 .await,
         );
@@ -405,31 +402,31 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
 - !unmute: Unmutes the bot in the voice channel.
 - !deafen: Deafens the bot in the voice channel.
 - !undeafen: Undeafens the bot in the voice channel.
-- !report <text>: Sends the provided text to the game master assistant and displays the response.";
+- !report <text>: Sends the provided text to the game master assistant and displays the answer. Use reaction to read the response aloud.";
 
-    check_msg(msg.channel_id.say(&ctx.http, help_text).await);
+    check_msg(&msg.channel_id.say(&ctx.http, help_text).await);
     Ok(())
 }
 
 //Custom command to call AI
-#[command]
-async fn report(ctx: &Context, msg: &Message) -> CommandResult {
-    let assistant_request = AssistantRequest {
-        prompt: msg.content[8..].to_string(),
-    };
-    match run_completion(assistant_request).await {
-        Ok(response) => {
-            check_msg(msg.channel_id.say(&ctx.http, &response).await);
-        }
-        Err(e) => {
-            check_msg(msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await);
-        }
-    }
-    Ok(())
-}
+// #[command]
+// async fn report(ctx: &Context, msg: &Message) -> CommandResult {
+//     let assistant_request = AssistantRequest {
+//         prompt: msg.content[8..].to_string(),
+//     };
+//     match run_completion(assistant_request).await {
+//         Ok(response) => {
+//             check_msg(&msg.channel_id.say(&ctx.http, &response).await);
+//         }
+//         Err(e) => {
+//             check_msg(&msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await);
+//         }
+//     }
+//     Ok(())
+// }
 
 /// Checks that a message successfully sent; if not, then logs why to stdout.
-fn check_msg(result: SerenityResult<Message>) {
+fn check_msg(result: &SerenityResult<Message>) {
     if let Err(why) = result {
         println!("Error sending message: {:?}", why);
     }
@@ -618,38 +615,38 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
 }
 
 //FIXME debug, play a local audio
-#[command]
-#[only_in(guilds)]
-async fn play2(ctx: &Context, msg: &Message) -> CommandResult {
-    let guild_id = msg.guild_id.unwrap();
+// #[command]
+// #[only_in(guilds)]
+// async fn play2(ctx: &Context, msg: &Message) -> CommandResult {
+//     let guild_id = msg.guild_id.unwrap();
 
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
+//     let manager = songbird::get(ctx)
+//         .await
+//         .expect("Songbird Voice client placed in at initialisation.")
+//         .clone();
 
-    if let Some(handler_lock) = manager.get(guild_id) {
-        let mut handler = handler_lock.lock().await;
+//     if let Some(handler_lock) = manager.get(guild_id) {
+//         let mut handler = handler_lock.lock().await;
 
-        let audio_path = "assets/speech.mp3";
-        let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
-        let mut audio_data = Vec::new();
-        file.read_to_end(&mut audio_data)
-            .expect("Failed to read file data");
-        let src = songbird::input::Input::from(audio_data);
-        let _ = handler.play_input(src.into());
+//         let audio_path = "assets/speech.mp3";
+//         let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
+//         let mut audio_data = Vec::new();
+//         file.read_to_end(&mut audio_data)
+//             .expect("Failed to read file data");
+//         let src = songbird::input::Input::from(audio_data);
+//         let _ = handler.play_input(src.into());
 
-        check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
-    } else {
-        check_msg(
-            msg.channel_id
-                .say(&ctx.http, "Not in a voice channel to play in")
-                .await,
-        );
-    }
+//         check_msg(&msg.channel_id.say(&ctx.http, "Playing song").await);
+//     } else {
+//         check_msg(
+//             &msg.channel_id
+//                 .say(&ctx.http, "Not in a voice channel to play in")
+//                 .await,
+//         );
+//     }
 
-    Ok(())
-}
+//     Ok(())
+// }
 
 //FIXME The maximum length is 4096 characters.
 async fn text_to_speech(
@@ -692,133 +689,253 @@ async fn text_to_speech(
 }
 
 //FIXME debug
+// #[command]
+// async fn report2(ctx: &Context, msg: &Message) -> CommandResult {
+//     let assistant_request = AssistantRequest {
+//         prompt: msg.content[8..].to_string(),
+//     };
+//     match run_completion(assistant_request).await {
+//         Ok(response) => {
+//             check_msg(&msg.channel_id.say(&ctx.http, &response).await);
+//             text_to_speech(&response, "assets/speech1.mp3")
+//                 .await
+//                 .unwrap();
+
+//             let guild_id = msg.guild_id.unwrap();
+
+//             let manager = songbird::get(ctx)
+//                 .await
+//                 .expect("Songbird Voice client placed in at initialisation.")
+//                 .clone();
+
+//             if let Some(handler_lock) = manager.get(guild_id) {
+//                 let mut handler = handler_lock.lock().await;
+
+//                 let audio_path = "assets/speech1.mp3";
+//                 let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
+//                 let mut audio_data = Vec::new();
+//                 file.read_to_end(&mut audio_data)
+//                     .expect("Failed to read file data");
+//                 let src = songbird::input::Input::from(audio_data);
+//                 let _ = handler.play_input(src.into());
+
+//                 check_msg(&msg.channel_id.say(&ctx.http, "Playing transcript").await);
+//             } else {
+//                 check_msg(
+//                     &msg.channel_id
+//                         .say(&ctx.http, "Not in a voice channel to play in")
+//                         .await,
+//                 );
+//             }
+//         }
+//         Err(e) => {
+//             check_msg(&msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await);
+//         }
+//     }
+//     Ok(())
+// }
+
+// #[command]
+// async fn react1(ctx: &Context, msg: &Message) -> CommandResult {
+//     match msg
+//         .react(&ctx.http, ReactionType::Unicode("🔊".to_string()))
+//         .await
+//     {
+//         Ok(_) => Ok(()),
+//         Err(why) => {
+//             check_msg(
+//                 &msg.reply(ctx, &format!("Failed to add reaction: {:?}", why))
+//                     .await,
+//             );
+//             Err(why.into()) // Propagate the error for logging and better debugging
+//         }
+//     }
+// }
+
+// #[command]
+// async fn react2(ctx: &Context, msg: &Message) -> CommandResult {
+//     let content = msg.content[8..].to_string();
+//     info!("content = {}", content);
+
+//     let reaction_type = match content.as_str() {
+//         "recycle" | "♻️" => ReactionType::Unicode("♻️".to_string()),
+//         "speaker" | "sound" | "🔊" => ReactionType::Unicode("🔊".to_string()),
+//         _ => {
+//             check_msg(
+//                 &msg.reply(
+//                     ctx,
+//                     "Invalid reaction type. Use 'recycle', '♻️', 'speaker', 'sound', or '🔊'",
+//                 )
+//                 .await,
+//             );
+//             return Ok(());
+//         }
+//     };
+
+//     // Add error handling for reaction addition, including rate limits and permission issues
+//     match msg.react(&ctx.http, reaction_type).await {
+//         Ok(_) => Ok(()),
+//         Err(why) => {
+//             check_msg(
+//                 &msg.reply(ctx, &format!("Failed to add reaction: {:?}", why))
+//                     .await,
+//             );
+//             Err(why.into()) // Propagate the error for logging and better debugging
+//         }
+//     }
+// }
+
+// #[command]
+// async fn react3(ctx: &Context, msg: &Message) -> CommandResult {
+//     // React to the message with a specific emoji
+
+//     // Set up a reaction collector
+//     if let Some(reaction) = &msg
+//         .await_reaction(&ctx)
+//         .timeout(Duration::from_secs(60)) // How long to wait for a reaction
+//         .author_id(msg.author.id) // Only listen to the message author's reactions
+//         .await
+//     {
+//         // Check if the reaction matches the one we added
+//         if let ReactionType::Unicode(ref emoji) = reaction.emoji {
+//             if emoji == "🔊" {
+//                 // Do something when the user reacts with the specified emoji
+//                 msg.reply(&ctx.http, "You clicked the 🔊 reaction!").await?;
+//             } else {
+//                 // Handle unexpected reactions
+//                 msg.reply(&ctx.http, "That's not the reaction I was looking for!")
+//                     .await?;
+//             }
+//         }
+//     } else {
+//         // Timeout case: no reaction received
+//         msg.reply(&ctx.http, "No reaction received in time.")
+//             .await?;
+//     }
+
+//     Ok(())
+// }
+
+async fn read_local_audio(
+    ctx: &Context,
+    msg: &Message,
+    audio_path: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    info!("read_local_audio {}", audio_path);
+
+    let guild_id = msg.guild_id.ok_or("Not in a guild")?;
+
+    let manager = songbird::get(ctx)
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let mut handler = handler_lock.lock().await;
+
+        let mut file = std::fs::File::open(audio_path)
+            .map_err(|e| format!("Failed to open file: {} - {}", audio_path, e))?;
+        let mut audio_data = Vec::new();
+        file.read_to_end(&mut audio_data)
+            .map_err(|e| format!("Failed to read file data: {}", e))?;
+        let src = Input::from(audio_data);
+
+        handler.play_input(src.into());
+        Ok(())
+    } else {
+        let error_message = "Not in a voice channel to play in";
+        check_msg(&msg.channel_id.say(&ctx.http, error_message).await);
+        Err(error_message.into())
+    }
+}
+
 #[command]
-async fn report2(ctx: &Context, msg: &Message) -> CommandResult {
+#[only_in(guilds)]
+async fn report(ctx: &Context, msg_user: &Message) -> CommandResult {
     let assistant_request = AssistantRequest {
-        prompt: msg.content[8..].to_string(),
+        prompt: msg_user.content[8..].to_string(),
     };
+
     match run_completion(assistant_request).await {
-        Ok(response) => {
-            check_msg(msg.channel_id.say(&ctx.http, &response).await);
-            text_to_speech(&response, "assets/speech1.mp3")
-                .await
-                .unwrap();
+        Ok(text_generated) => {
+            let msg_generated = msg_user.channel_id.say(&ctx.http, &text_generated).await;
+            check_msg(&msg_generated);
+            let msg_generated = msg_generated.unwrap();
+            let msg_generated2 = msg_generated.clone();
 
-            let guild_id = msg.guild_id.unwrap();
+            let reaction_sound: ReactionType = ReactionType::Unicode("🔊".to_string());
+            let reaction_time: ReactionType = ReactionType::Unicode("⏱️".to_string());
 
-            let manager = songbird::get(ctx)
-                .await
-                .expect("Songbird Voice client placed in at initialisation.")
-                .clone();
+            // Add the "🔊" reaction
+            msg_generated
+                .react(&ctx.http, reaction_sound.clone())
+                .await?;
 
-            if let Some(handler_lock) = manager.get(guild_id) {
-                let mut handler = handler_lock.lock().await;
+            // Create a reaction collector
+            let collector = msg_generated
+                .await_reaction(ctx)
+                .timeout(Duration::from_secs(60))
+                .author_id(msg_user.author.id)
+                .await;
 
-                let audio_path = "assets/speech1.mp3";
-                let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
-                let mut audio_data = Vec::new();
-                file.read_to_end(&mut audio_data)
-                    .expect("Failed to read file data");
-                let src = songbird::input::Input::from(audio_data);
-                let _ = handler.play_input(src.into());
+            match collector {
+                Some(reaction) => {
+                    if let ReactionType::Unicode(emoji) = reaction.emoji {
+                        if emoji == "🔊" {
+                            info!("collector reaction {}", emoji);
+                            info!("Callback triggered for message: {}", msg_user.id);
 
-                check_msg(msg.channel_id.say(&ctx.http, "Playing transcript").await);
-            } else {
-                check_msg(
-                    msg.channel_id
-                        .say(&ctx.http, "Not in a voice channel to play in")
-                        .await,
-                );
+                            // Clone necessary variables for the async block
+                            let ctx = ctx.clone();
+                            let audio_path = "assets/report3_audio.mp3";
+                            let text_generated = text_generated.clone();
+
+                            match text_to_speech(&text_generated, audio_path).await {
+                                Ok(_) => {
+                                    info!("text_to_speech ok");
+                                    if let Err(why) =
+                                        read_local_audio(&ctx, &msg_user, audio_path).await
+                                    {
+                                        check_msg(
+                                            &msg_generated2
+                                                .reply(
+                                                    &ctx.http,
+                                                    &format!("Audio playback failed: {:?}", why),
+                                                )
+                                                .await,
+                                        );
+                                    }
+                                }
+                                Err(why) => {
+                                    check_msg(
+                                        &msg_generated2
+                                            .reply(
+                                                &ctx.http,
+                                                &format!("Text-to-speech failed: {:?}", why),
+                                            )
+                                            .await,
+                                    );
+                                }
+                            }
+                        }
+                    }
+                }
+                None => {}
             }
+
+            msg_user
+                .delete_reaction(&ctx.http, Some(msg_user.author.id), reaction_sound.clone())
+                .await?;
+            msg_user.react(&ctx.http, reaction_time).await?;
         }
         Err(e) => {
-            check_msg(msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await);
-        }
-    }
-    Ok(())
-}
-
-use serenity::model::prelude::ReactionType;
-
-#[command]
-async fn react1(ctx: &Context, msg: &Message) -> CommandResult {
-    match msg
-        .react(&ctx.http, ReactionType::Unicode("🔊".to_string()))
-        .await
-    {
-        Ok(_) => Ok(()),
-        Err(why) => {
             check_msg(
-                msg.reply(ctx, &format!("Failed to add reaction: {:?}", why))
+                &msg_user
+                    .channel_id
+                    .say(&ctx.http, format!("Error: {}", e))
                     .await,
             );
-            Err(why.into()) // Propagate the error for logging and better debugging
         }
     }
-}
-
-#[command]
-async fn react2(ctx: &Context, msg: &Message) -> CommandResult {
-    let content = msg.content[8..].to_string();
-    info!("content = {}", content);
-
-    let reaction_type = match content.as_str() {
-        "recycle" | "♻️" => ReactionType::Unicode("♻️".to_string()),
-        "speaker" | "sound" | "🔊" => ReactionType::Unicode("🔊".to_string()),
-        _ => {
-            check_msg(
-                msg.reply(
-                    ctx,
-                    "Invalid reaction type. Use 'recycle', '♻️', 'speaker', 'sound', or '🔊'",
-                )
-                .await,
-            );
-            return Ok(());
-        }
-    };
-
-    // Add error handling for reaction addition, including rate limits and permission issues
-    match msg.react(&ctx.http, reaction_type).await {
-        Ok(_) => Ok(()),
-        Err(why) => {
-            check_msg(
-                msg.reply(ctx, &format!("Failed to add reaction: {:?}", why))
-                    .await,
-            );
-            Err(why.into()) // Propagate the error for logging and better debugging
-        }
-    }
-}
-
-#[command]
-async fn react3(ctx: &Context, msg: &Message) -> CommandResult {
-    // React to the message with a specific emoji
-    msg.react(&ctx.http, ReactionType::Unicode("🔊".to_string()))
-        .await?;
-
-    // Set up a reaction collector
-    if let Some(reaction) = &msg
-        .await_reaction(&ctx)
-        .timeout(Duration::from_secs(60)) // How long to wait for a reaction
-        .author_id(msg.author.id) // Only listen to the message author's reactions
-        .await
-    {
-        // Check if the reaction matches the one we added
-        if let ReactionType::Unicode(ref emoji) = reaction.emoji {
-            if emoji == "🔊" {
-                // Do something when the user reacts with the specified emoji
-                msg.reply(&ctx.http, "You clicked the 🔊 reaction!").await?;
-            } else {
-                // Handle unexpected reactions
-                msg.reply(&ctx.http, "That's not the reaction I was looking for!")
-                    .await?;
-            }
-        }
-    } else {
-        // Timeout case: no reaction received
-        msg.reply(&ctx.http, "No reaction received in time.")
-            .await?;
-    }
-
     Ok(())
 }
