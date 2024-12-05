@@ -114,7 +114,8 @@ curl https://api.openai.com/v1/audio/speech \
   -d '{
     "model": "tts-1",
     "input": "Today is a wonderful day to build something people love!",
-    "voice": "onyx"
+    "voice": "onyx",
+    "speed": "1.4"
   }' \
   --output speech.mp3
 ```

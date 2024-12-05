@@ -48,7 +48,7 @@ use serenity::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
-use tracing::info;
+use tracing::{info, warn};
 
 use futures::StreamExt;
 
@@ -409,23 +409,6 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
     Ok(())
 }
 
-//Custom command to call AI
-// #[command]
-// async fn report(ctx: &Context, msg: &Message) -> CommandResult {
-//     let assistant_request = AssistantRequest {
-//         prompt: msg.content[8..].to_string(),
-//     };
-//     match run_completion(assistant_request).await {
-//         Ok(response) => {
-//             check_msg(&msg.channel_id.say(&ctx.http, &response).await);
-//         }
-//         Err(e) => {
-//             check_msg(&msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await);
-//         }
-//     }
-//     Ok(())
-// }
-
 /// Checks that a message successfully sent; if not, then logs why to stdout.
 fn check_msg(result: &SerenityResult<Message>) {
     if let Err(why) = result {
@@ -618,40 +601,6 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
     Ok(latest_message.to_string())
 }
 
-//FIXME debug, play a local audio
-// #[command]
-// #[only_in(guilds)]
-// async fn play2(ctx: &Context, msg: &Message) -> CommandResult {
-//     let guild_id = msg.guild_id.unwrap();
-
-//     let manager = songbird::get(ctx)
-//         .await
-//         .expect("Songbird Voice client placed in at initialisation.")
-//         .clone();
-
-//     if let Some(handler_lock) = manager.get(guild_id) {
-//         let mut handler = handler_lock.lock().await;
-
-//         let audio_path = "assets/speech.mp3";
-//         let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
-//         let mut audio_data = Vec::new();
-//         file.read_to_end(&mut audio_data)
-//             .expect("Failed to read file data");
-//         let src = songbird::input::Input::from(audio_data);
-//         let _ = handler.play_input(src.into());
-
-//         check_msg(&msg.channel_id.say(&ctx.http, "Playing song").await);
-//     } else {
-//         check_msg(
-//             &msg.channel_id
-//                 .say(&ctx.http, "Not in a voice channel to play in")
-//                 .await,
-//         );
-//     }
-
-//     Ok(())
-// }
-
 //FIXME The maximum length is 4096 characters.
 async fn text_to_speech(
     text: &str,
@@ -665,10 +614,11 @@ async fn text_to_speech(
         .header("Authorization", format!("Bearer {}", openai_api_key))
         .header("Content-Type", "application/json")
         .json(&json!({
-            "model": "tts-1", //FIXME try tts-1-hd
+            "model": "tts-1-hd", //FIXME try tts-1
             "input": text,
-            "response_format": "mp3",
-            "voice": "onyx"
+            "response_format": "opus",
+            "voice": "onyx",
+            "speed": "1.4"
         }))
         .send()
         .await?;
@@ -691,134 +641,6 @@ async fn text_to_speech(
 
     Ok(())
 }
-
-//FIXME debug
-// #[command]
-// async fn report2(ctx: &Context, msg: &Message) -> CommandResult {
-//     let assistant_request = AssistantRequest {
-//         prompt: msg.content[8..].to_string(),
-//     };
-//     match run_completion(assistant_request).await {
-//         Ok(response) => {
-//             check_msg(&msg.channel_id.say(&ctx.http, &response).await);
-//             text_to_speech(&response, "assets/speech1.mp3")
-//                 .await
-//                 .unwrap();
-
-//             let guild_id = msg.guild_id.unwrap();
-
-//             let manager = songbird::get(ctx)
-//                 .await
-//                 .expect("Songbird Voice client placed in at initialisation.")
-//                 .clone();
-
-//             if let Some(handler_lock) = manager.get(guild_id) {
-//                 let mut handler = handler_lock.lock().await;
-
-//                 let audio_path = "assets/speech1.mp3";
-//                 let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
-//                 let mut audio_data = Vec::new();
-//                 file.read_to_end(&mut audio_data)
-//                     .expect("Failed to read file data");
-//                 let src = songbird::input::Input::from(audio_data);
-//                 let _ = handler.play_input(src.into());
-
-//                 check_msg(&msg.channel_id.say(&ctx.http, "Playing transcript").await);
-//             } else {
-//                 check_msg(
-//                     &msg.channel_id
-//                         .say(&ctx.http, "Not in a voice channel to play in")
-//                         .await,
-//                 );
-//             }
-//         }
-//         Err(e) => {
-//             check_msg(&msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await);
-//         }
-//     }
-//     Ok(())
-// }
-
-// #[command]
-// async fn react1(ctx: &Context, msg: &Message) -> CommandResult {
-//     match msg
-//         .react(&ctx.http, ReactionType::Unicode("🔊".to_string()))
-//         .await
-//     {
-//         Ok(_) => Ok(()),
-//         Err(why) => {
-//             check_msg(
-//                 &msg.reply(ctx, &format!("Failed to add reaction: {:?}", why))
-//                     .await,
-//             );
-//             Err(why.into()) // Propagate the error for logging and better debugging
-//         }
-//     }
-// }
-
-// #[command]
-// async fn react2(ctx: &Context, msg: &Message) -> CommandResult {
-//     let content = msg.content[8..].to_string();
-//     info!("content = {}", content);
-
-//     let reaction_type = match content.as_str() {
-//         "recycle" | "♻️" => ReactionType::Unicode("♻️".to_string()),
-//         "speaker" | "sound" | "🔊" => ReactionType::Unicode("🔊".to_string()),
-//         _ => {
-//             check_msg(
-//                 &msg.reply(
-//                     ctx,
-//                     "Invalid reaction type. Use 'recycle', '♻️', 'speaker', 'sound', or '🔊'",
-//                 )
-//                 .await,
-//             );
-//             return Ok(());
-//         }
-//     };
-
-//     // Add error handling for reaction addition, including rate limits and permission issues
-//     match msg.react(&ctx.http, reaction_type).await {
-//         Ok(_) => Ok(()),
-//         Err(why) => {
-//             check_msg(
-//                 &msg.reply(ctx, &format!("Failed to add reaction: {:?}", why))
-//                     .await,
-//             );
-//             Err(why.into()) // Propagate the error for logging and better debugging
-//         }
-//     }
-// }
-
-// #[command]
-// async fn react3(ctx: &Context, msg: &Message) -> CommandResult {
-//     // React to the message with a specific emoji
-
-//     // Set up a reaction collector
-//     if let Some(reaction) = &msg
-//         .await_reaction(&ctx)
-//         .timeout(Duration::from_secs(60)) // How long to wait for a reaction
-//         .author_id(msg.author.id) // Only listen to the message author's reactions
-//         .await
-//     {
-//         // Check if the reaction matches the one we added
-//         if let ReactionType::Unicode(ref emoji) = reaction.emoji {
-//             if emoji == "🔊" {
-//                 // Do something when the user reacts with the specified emoji
-//                 msg.reply(&ctx.http, "You clicked the 🔊 reaction!").await?;
-//             } else {
-//                 // Handle unexpected reactions
-//                 msg.reply(&ctx.http, "That's not the reaction I was looking for!")
-//                     .await?;
-//             }
-//         }
-//     } else {
-//         // Timeout case: no reaction received
-//         msg.reply(&ctx.http, "No reaction received in time.")
-//             .await?;
-//     }
-
-//     Ok(())
-// }
 
 async fn read_local_audio(
     ctx: &Context,
@@ -879,11 +701,24 @@ fn emoji(e: &str) -> serenity::all::ReactionType {
     return ReactionType::Unicode(e.to_string());
 }
 
+fn pre_prompt(user: &serenity::model::user::User) -> &str {
+    match user.id.get() {
+        607653619122307123 => "Comm dit:",
+        374989552646881281 => "Explo dit:",
+        3 => "Secu dit:",
+        _ => {
+            warn!("Unknown user id={}", user.id);
+            return "";
+        }
+    }
+}
+
 async fn handle_report(
     ctx: &Context,
     msg_user: &Message,
-    prompt: String,
+    mut prompt: String,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    prompt = format!("{}{}", pre_prompt(&msg_user.author), prompt);
     let prompt2 = prompt.clone();
     add_reaction(ctx, &msg_user, emoji(EMOJI_WAIT)).await?;
 
@@ -991,7 +826,7 @@ async fn handle_reaction(
     if let ReactionType::Unicode(emoji) = reaction.emoji {
         if emoji == EMOJI_SOUND {
             let ctx = ctx.clone();
-            let audio_path = format!("{}.mp3", hash_file_name);
+            let audio_path = format!("{}.opus", hash_file_name);
 
             match text_to_speech(text_generated, &audio_path).await {
                 Ok(_) => {
