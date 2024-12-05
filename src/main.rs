@@ -48,7 +48,7 @@ use serenity::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use futures::StreamExt;
 
@@ -68,7 +68,7 @@ impl EventHandler for Handler {
 }
 
 #[group]
-#[commands(deafen, join, leave, mute, play, ping, undeafen, unmute, help, report)]
+#[commands(join, leave, play, ping, help, report)]
 struct General;
 
 #[tokio::main]
@@ -106,44 +106,6 @@ async fn main() {
 
     let _signal_err = tokio::signal::ctrl_c().await;
     println!("Received Ctrl-C, shutting down.");
-}
-
-#[command]
-#[only_in(guilds)]
-async fn deafen(ctx: &Context, msg: &Message) -> CommandResult {
-    let guild_id = msg.guild_id.unwrap();
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    let handler_lock = match manager.get(guild_id) {
-        Some(handler) => handler,
-        None => {
-            check_msg(&msg.reply(ctx, "Not in a voice channel").await);
-
-            return Ok(());
-        }
-    };
-
-    let mut handler = handler_lock.lock().await;
-
-    if handler.is_deaf() {
-        check_msg(&msg.channel_id.say(&ctx.http, "Already deafened").await);
-    } else {
-        if let Err(e) = handler.deafen(true).await {
-            check_msg(
-                &msg.channel_id
-                    .say(&ctx.http, format!("Failed: {:?}", e))
-                    .await,
-            );
-        }
-
-        check_msg(&msg.channel_id.say(&ctx.http, "Deafened").await);
-    }
-
-    Ok(())
 }
 
 #[command]
@@ -230,44 +192,6 @@ async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
 }
 
 #[command]
-#[only_in(guilds)]
-async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
-    let guild_id = msg.guild_id.unwrap();
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    let handler_lock = match manager.get(guild_id) {
-        Some(handler) => handler,
-        None => {
-            check_msg(&msg.reply(ctx, "Not in a voice channel").await);
-
-            return Ok(());
-        }
-    };
-
-    let mut handler = handler_lock.lock().await;
-
-    if handler.is_mute() {
-        check_msg(&msg.channel_id.say(&ctx.http, "Already muted").await);
-    } else {
-        if let Err(e) = handler.mute(true).await {
-            check_msg(
-                &msg.channel_id
-                    .say(&ctx.http, format!("Failed: {:?}", e))
-                    .await,
-            );
-        }
-
-        check_msg(&msg.channel_id.say(&ctx.http, "Now muted").await);
-    }
-
-    Ok(())
-}
-
-#[command]
 async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
     check_msg(&msg.channel_id.say(&ctx.http, "Pong!").await);
     Ok(())
@@ -327,83 +251,15 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     Ok(())
 }
 
-#[command]
-#[only_in(guilds)]
-async fn undeafen(ctx: &Context, msg: &Message) -> CommandResult {
-    let guild_id = msg.guild_id.unwrap();
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    if let Some(handler_lock) = manager.get(guild_id) {
-        let mut handler = handler_lock.lock().await;
-        if let Err(e) = handler.deafen(false).await {
-            check_msg(
-                &msg.channel_id
-                    .say(&ctx.http, format!("Failed: {:?}", e))
-                    .await,
-            );
-        }
-
-        check_msg(&msg.channel_id.say(&ctx.http, "Undeafened").await);
-    } else {
-        check_msg(
-            &msg.channel_id
-                .say(&ctx.http, "Not in a voice channel to undeafen in")
-                .await,
-        );
-    }
-
-    Ok(())
-}
-
-#[command]
-#[only_in(guilds)]
-async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
-    let guild_id = msg.guild_id.unwrap();
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    if let Some(handler_lock) = manager.get(guild_id) {
-        let mut handler = handler_lock.lock().await;
-        if let Err(e) = handler.mute(false).await {
-            check_msg(
-                &msg.channel_id
-                    .say(&ctx.http, format!("Failed: {:?}", e))
-                    .await,
-            );
-        }
-
-        check_msg(&msg.channel_id.say(&ctx.http, "Unmuted").await);
-    } else {
-        check_msg(
-            &msg.channel_id
-                .say(&ctx.http, "Not in a voice channel to unmute in")
-                .await,
-        );
-    }
-
-    Ok(())
-}
-
 //Custom command to display other commands
 #[command]
 async fn help(ctx: &Context, msg: &Message) -> CommandResult {
-    let help_text = "Available commands:
-- !ping: Responds with 'Pong!'
-- !join: Joins the voice channel you are currently in.
-- !leave: Leaves the current voice channel.
-- !play <url/search term>: Plays an audio track from a URL or searches YouTube.
-- !mute: Mutes the bot in the voice channel.
-- !unmute: Unmutes the bot in the voice channel.
-- !deafen: Deafens the bot in the voice channel.
-- !undeafen: Undeafens the bot in the voice channel.
-- !report <text>: Sends the provided text to the game master assistant and displays the answer. Use reaction to read the response aloud.";
+    let help_text = "Available commands:\n\
+        - !ping: Responds with 'Pong!'\n\
+        - !join: Joins the voice channel you are currently in.\n\
+        - !leave: Leaves the current voice channel.\n\
+        - !play <url/search term>: Plays an audio track from a URL or searches YouTube.\n\
+        - !report <text>: Sends the provided text to the game master assistant and displays the answer. Use reaction to read the response aloud.";
 
     check_msg(&msg.channel_id.say(&ctx.http, help_text).await);
     Ok(())
@@ -450,7 +306,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
         .send()
         .await?;
 
-    info!(
+    debug!(
         "POST https://api.openai.com/v1/threads/{}/messages {:?}",
         //no json data here, we only care whether status is OK
         thread_id,
@@ -477,7 +333,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
         .send()
         .await?;
 
-    info!(
+    debug!(
         "POST https://api.openai.com/v1/threads/{}/runs {:?}",
         thread_id, run_resp
     );
@@ -490,7 +346,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
         return Err(format!("Error creating run: {}", err_text).into());
     }
     let run_resp_data: serde_json::Value = run_resp.json().await?;
-    info!(
+    debug!(
         "POST https://api.openai.com/v1/threads/{}/runs {:?}",
         thread_id, run_resp_data
     );
@@ -525,7 +381,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
         }
 
         run_status_data = run_status_resp.json().await?;
-        info!(
+        debug!(
             "GET https://api.openai.com/v1/threads/{}/runs/{}/steps {:?}",
             thread_id, run_id, run_status_data
         );
@@ -543,12 +399,6 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
     if run_status_data.is_null() {
         return Err(format!("Error checking run_status_json").into());
     }
-
-    //FIXME
-    info!(
-        "DEBUG LAST GET https://api.openai.com/v1/threads/{}/runs/{}/steps {:?} ; run_status={}",
-        thread_id, run_id, run_status_data, run_status
-    );
 
     let message_id = run_status_data
         .get("data")
@@ -584,7 +434,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
     }
 
     let message_data: serde_json::Value = message_response.json().await?;
-    info!(
+    debug!(
         "GET https://api.openai.com/v1/threads/{}/messages/{} {:?}",
         thread_id, message_id, message_data
     );
@@ -648,7 +498,7 @@ async fn read_local_audio(
     msg: &Message,
     audio_path: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    info!("read_local_audio {}", audio_path);
+    debug!("read_local_audio {}", audio_path);
 
     let manager = songbird::get(ctx)
         .await
@@ -726,9 +576,9 @@ async fn handle_report(
     let text_generated = run_completion(assistant_request).await?;
 
     let msg_generated = msg_user.channel_id.say(&ctx.http, &text_generated).await?;
-    info!("delete_reaction msg_user EMOJI_WAIT",);
+    debug!("delete_reaction msg_user EMOJI_WAIT",);
     delete_reaction(ctx, msg_user, emoji(EMOJI_WAIT)).await?;
-    info!("add_reaction msg_user EMOJI_DONE",);
+    debug!("add_reaction msg_user EMOJI_DONE",);
     add_reaction(ctx, &msg_user, emoji(EMOJI_DONE).clone()).await?;
 
     let file_path: String = format!("{}{}", ASSETS_DIR, generate_file_hash(&text_generated));
@@ -759,14 +609,14 @@ async fn react_and_handle_response(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let msg_generated2 = msg.clone();
 
-    info!("add_reaction msg EMOJI_SOUND",);
+    debug!("add_reaction msg EMOJI_SOUND",);
     add_reaction(ctx, &msg, emoji(EMOJI_SOUND)).await?;
     let collector = collect_reaction(ctx, &msg).await;
 
     if let Some(reaction) = collector {
-        info!("delete_reaction msg EMOJI_SOUND",);
+        debug!("delete_reaction msg EMOJI_SOUND",);
         delete_reaction(ctx, &msg, emoji(EMOJI_SOUND)).await?;
-        info!("add_reaction msg EMOJI_WAIT",);
+        debug!("add_reaction msg EMOJI_WAIT",);
         add_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
         handle_reaction(
             ctx,
@@ -778,9 +628,9 @@ async fn react_and_handle_response(
         )
         .await?;
     }
-    info!("delete_reaction msg EMOJI_WAIT",);
+    debug!("delete_reaction msg EMOJI_WAIT",);
     delete_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
-    info!("add_reaction msg EMOJI_TIME",);
+    debug!("add_reaction msg EMOJI_TIME",);
     add_reaction(ctx, &msg, emoji(EMOJI_TIME)).await?;
 
     Ok(())
