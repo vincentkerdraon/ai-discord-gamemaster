@@ -4,10 +4,6 @@
 // But with deprecation warnings
 #![allow(deprecated)]
 
-// Compiler error in rustc 1.83.0
-// Working in rustc 1.84.0-beta.3
-// https://github.com/rust-lang/rust/issues/133864
-
 use std::io::Read;
 use std::time::Duration;
 use std::{env, error::Error};
@@ -48,7 +44,7 @@ use serenity::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
-use tracing::{debug, warn};
+use tracing::{debug, info, warn};
 
 use futures::StreamExt;
 
@@ -63,7 +59,7 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, _: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
+        info!("{} is connected!", ready.user.name);
     }
 }
 
@@ -89,7 +85,7 @@ async fn main() {
         .framework(framework)
         .register_songbird()
         // We insert our own HTTP client here to make use of in
-        // `~play`. If we wanted, we could supply cookies and auth
+        // `!play`. If we wanted, we could supply cookies and auth
         // details ahead of time.
         //
         // Generally, we don't want to make a new Client for every request!
@@ -101,11 +97,11 @@ async fn main() {
         let _ = client
             .start()
             .await
-            .map_err(|why| println!("Client ended: {:?}", why));
+            .map_err(|why| warn!("Client ended: {:?}", why));
     });
 
     let _signal_err = tokio::signal::ctrl_c().await;
-    println!("Received Ctrl-C, shutting down.");
+    info!("Received Ctrl-C, shutting down.");
 }
 
 #[command]
@@ -151,7 +147,7 @@ impl VoiceEventHandler for TrackErrorNotifier {
     async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
         if let EventContext::Track(track_list) = ctx {
             for (state, handle) in *track_list {
-                println!(
+                warn!(
                     "Track {:?} encountered an error: {:?}",
                     handle.uuid(),
                     state.playing
@@ -284,7 +280,7 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
 /// Checks that a message successfully sent; if not, then logs why to stdout.
 fn check_msg(result: &SerenityResult<Message>) {
     if let Err(why) = result {
-        println!("Error sending message: {:?}", why);
+        warn!("Error sending message: {:?}", why);
     }
 }
 
@@ -467,7 +463,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
     Ok(latest_message.to_string())
 }
 
-//FIXME The maximum length is 4096 characters.
+//The maximum length is 4096 characters.
 async fn text_to_speech(
     text: &str,
     destination_path: &str,
@@ -484,7 +480,7 @@ async fn text_to_speech(
             "input": text,
             "response_format": "opus",
             "voice": "onyx",
-            "speed": "1.4"
+            "speed": "1.5"
         }))
         .send()
         .await?;

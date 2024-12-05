@@ -12,7 +12,7 @@
             "args": [],
             "cwd": "${workspaceFolder}/ai-discord-gamemaster",
             "env": {
-                "RUST_LOG": "info",
+                "RUST_LOG": "warn,ai_discord_gamemaster=info",
                 "RUST_BACKTRACE": "1",
                 "RUST_MIN_STACK": "16777216",
             },
