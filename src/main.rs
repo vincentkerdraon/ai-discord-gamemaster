@@ -12,6 +12,7 @@ use std::io::Read;
 use std::time::Duration;
 use std::{env, error::Error};
 
+use songbird::id::GuildId;
 // This trait adds the `register_songbird` and `register_songbird_with` methods
 // to the client builder below, making it easy to install this voice client.
 // The voice client can be retrieved in any command using `songbird::get(ctx).await`.
@@ -519,7 +520,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
     // Step 3: Wait for the run to complete
     let mut run_status = String::from("queued"); // or whatever the initial status is
     let mut run_status_data: serde_json::Value = serde_json::Value::Object(serde_json::Map::new());
-    while run_status == "queued" || run_status == "in_progress" {
+    while run_status == "queued" || run_status == "in_progress" || run_status == "unknown" {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await; // Check every second
 
         let run_status_resp = client
@@ -575,7 +576,10 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
         .and_then(|msg_creation| msg_creation.get("message_id"))
         .and_then(|id| id.as_str())
         .map(String::from)
-        .ok_or("message_id not found in step details")?;
+        .ok_or(format!(
+            "message_id not found in step details, run_status_data={}, run_status={}",
+            run_status_data, run_status,
+        ))?;
 
     // Step 4: Retrieve the message (after run completion)
     let message_response: reqwest::Response = client
@@ -818,12 +822,11 @@ async fn text_to_speech(
 
 async fn read_local_audio(
     ctx: &Context,
+    guild_id: GuildId,
     msg: &Message,
     audio_path: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     info!("read_local_audio {}", audio_path);
-
-    let guild_id = msg.guild_id.ok_or("Not in a guild")?;
 
     let manager = songbird::get(ctx)
         .await
@@ -852,82 +855,10 @@ async fn read_local_audio(
 #[command]
 #[only_in(guilds)]
 async fn report(ctx: &Context, msg_user: &Message) -> CommandResult {
-    let assistant_request = AssistantRequest {
-        prompt: msg_user.content[8..].to_string(),
-    };
+    let prompt = msg_user.content[8..].to_string();
 
-    match run_completion(assistant_request).await {
-        Ok(text_generated) => {
-            let msg_generated = msg_user.channel_id.say(&ctx.http, &text_generated).await;
-            check_msg(&msg_generated);
-            let msg_generated = msg_generated.unwrap();
-            let msg_generated2 = msg_generated.clone();
-
-            let reaction_sound: ReactionType = ReactionType::Unicode("🔊".to_string());
-            let reaction_time: ReactionType = ReactionType::Unicode("⏱️".to_string());
-
-            // Add the "🔊" reaction
-            msg_generated
-                .react(&ctx.http, reaction_sound.clone())
-                .await?;
-
-            // Create a reaction collector
-            let collector = msg_generated
-                .await_reaction(ctx)
-                .timeout(Duration::from_secs(60))
-                .author_id(msg_user.author.id)
-                .await;
-
-            match collector {
-                Some(reaction) => {
-                    if let ReactionType::Unicode(emoji) = reaction.emoji {
-                        if emoji == "🔊" {
-                            info!("collector reaction {}", emoji);
-                            info!("Callback triggered for message: {}", msg_user.id);
-
-                            // Clone necessary variables for the async block
-                            let ctx = ctx.clone();
-                            let audio_path = "assets/report3_audio.mp3";
-                            let text_generated = text_generated.clone();
-
-                            match text_to_speech(&text_generated, audio_path).await {
-                                Ok(_) => {
-                                    info!("text_to_speech ok");
-                                    if let Err(why) =
-                                        read_local_audio(&ctx, &msg_user, audio_path).await
-                                    {
-                                        check_msg(
-                                            &msg_generated2
-                                                .reply(
-                                                    &ctx.http,
-                                                    &format!("Audio playback failed: {:?}", why),
-                                                )
-                                                .await,
-                                        );
-                                    }
-                                }
-                                Err(why) => {
-                                    check_msg(
-                                        &msg_generated2
-                                            .reply(
-                                                &ctx.http,
-                                                &format!("Text-to-speech failed: {:?}", why),
-                                            )
-                                            .await,
-                                    );
-                                }
-                            }
-                        }
-                    }
-                }
-                None => {}
-            }
-
-            msg_user
-                .delete_reaction(&ctx.http, Some(msg_user.author.id), reaction_sound.clone())
-                .await?;
-            msg_user.react(&ctx.http, reaction_time).await?;
-        }
+    match handle_report(ctx, msg_user, prompt).await {
+        Ok(_) => Ok(()),
         Err(e) => {
             check_msg(
                 &msg_user
@@ -935,6 +866,125 @@ async fn report(ctx: &Context, msg_user: &Message) -> CommandResult {
                     .say(&ctx.http, format!("Error: {}", e))
                     .await,
             );
+            Err(e.into()) // Or handle the error differently if needed
+        }
+    }
+}
+
+const EMOJI_SOUND: &str = "🔊";
+const EMOJI_TIME: &str = "⏱️";
+const EMOJI_WAIT: &str = "⏳";
+const EMOJI_DONE: &str = "✅";
+fn emoji(e: &str) -> serenity::all::ReactionType {
+    return ReactionType::Unicode(e.to_string());
+}
+
+async fn handle_report(
+    ctx: &Context,
+    msg_user: &Message,
+    prompt: String,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    add_reaction(ctx, &msg_user, emoji(EMOJI_WAIT)).await?;
+
+    let assistant_request = AssistantRequest { prompt };
+    let text_generated = run_completion(assistant_request).await?;
+
+    let msg_generated = msg_user.channel_id.say(&ctx.http, &text_generated).await?;
+    info!("delete_reaction msg_user EMOJI_WAIT",);
+    delete_reaction(ctx, msg_user, emoji(EMOJI_WAIT)).await?;
+    info!("add_reaction msg_user EMOJI_DONE",);
+    add_reaction(ctx, &msg_user, emoji(EMOJI_DONE).clone()).await?;
+
+    let guild_id = msg_user.guild_id.unwrap();
+
+    react_and_handle_response(ctx, guild_id.into(), msg_generated, text_generated).await?;
+    Ok(())
+}
+
+async fn react_and_handle_response(
+    ctx: &Context,
+    guild_id: GuildId,
+    msg: Message,
+    text_generated: String,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let msg_generated2 = msg.clone();
+
+    info!("add_reaction msg EMOJI_SOUND",);
+    add_reaction(ctx, &msg, emoji(EMOJI_SOUND)).await?;
+    let collector = collect_reaction(ctx, &msg).await;
+
+    if let Some(reaction) = collector {
+        info!("delete_reaction msg EMOJI_SOUND",);
+        delete_reaction(ctx, &msg, emoji(EMOJI_SOUND)).await?;
+        info!("add_reaction msg EMOJI_WAIT",);
+        add_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
+        handle_reaction(ctx, guild_id, &msg_generated2, &text_generated, reaction).await?;
+    }
+    info!("delete_reaction msg EMOJI_WAIT",);
+    delete_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
+    info!("add_reaction msg EMOJI_TIME",);
+    add_reaction(ctx, &msg, emoji(EMOJI_TIME)).await?;
+
+    Ok(())
+}
+
+async fn add_reaction(
+    ctx: &Context,
+    msg: &Message,
+    reaction: ReactionType,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    msg.react(&ctx.http, reaction).await?;
+    Ok(())
+}
+
+async fn collect_reaction(
+    ctx: &Context,
+    msg: &Message,
+) -> Option<serenity::model::channel::Reaction> {
+    msg.await_reaction(ctx)
+        .timeout(Duration::from_secs(600))
+        .await
+}
+
+async fn delete_reaction(
+    ctx: &Context,
+    msg: &Message,
+    reaction: ReactionType,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    msg.delete_reaction(&ctx.http, None, reaction).await?;
+    Ok(())
+}
+
+async fn handle_reaction(
+    ctx: &Context,
+    guild_id: GuildId,
+    msg: &Message,
+    text_generated: &str,
+    reaction: serenity::model::channel::Reaction,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if let ReactionType::Unicode(emoji) = reaction.emoji {
+        if emoji == EMOJI_SOUND {
+            let ctx = ctx.clone();
+            let audio_path = "assets/report3_audio.mp3";
+
+            match text_to_speech(text_generated, audio_path).await {
+                Ok(_) => {
+                    if let Err(why) = read_local_audio(&ctx, guild_id, msg, audio_path).await {
+                        check_msg(
+                            &msg.reply(&ctx.http, &format!("Audio playback failed: {:?}", why))
+                                .await,
+                        );
+                        return Err(why);
+                    }
+                }
+                Err(why) => {
+                    check_msg(
+                        &msg.reply(&ctx.http, &format!("Text-to-speech failed: {:?}", why))
+                            .await,
+                    );
+                    return Err(why);
+                }
+            }
         }
     }
     Ok(())
