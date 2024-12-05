@@ -481,7 +481,7 @@ async fn text_to_speech(
             "input": text,
             "response_format": "opus",
             "voice": "onyx",
-            "speed": "1.5"
+            "speed": "1.3"
         }))
         .send()
         .await?;
@@ -598,6 +598,10 @@ async fn handle_report(
     std::fs::write(text_path, text_content).unwrap();
 
     let guild_id = msg_user.guild_id.unwrap();
+
+    //Wait, else it will detect it's own adding of the emoji.
+    //A better way would be to filter out itself.
+    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
     react_and_handle_response(
         ctx,
