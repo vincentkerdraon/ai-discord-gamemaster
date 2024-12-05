@@ -48,7 +48,7 @@ use serenity::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 
 use futures::StreamExt;
 
@@ -68,7 +68,7 @@ impl EventHandler for Handler {
 }
 
 #[group]
-#[commands(join, leave, play, ping, help, report)]
+#[commands(join, leave, play, stop, ping, help, report)]
 struct General;
 
 #[tokio::main]
@@ -176,14 +176,10 @@ async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
 
     if has_handler {
         if let Err(e) = manager.remove(guild_id).await {
-            check_msg(
-                &msg.channel_id
-                    .say(&ctx.http, format!("Failed: {:?}", e))
-                    .await,
-            );
+            check_msg(&msg.reply(&ctx.http, format!("Failed: {:?}", e)).await);
         }
 
-        check_msg(&msg.channel_id.say(&ctx.http, "Left voice channel").await);
+        check_msg(&msg.reply(&ctx.http, "Left voice channel").await);
     } else {
         check_msg(&msg.reply(ctx, "Not in a voice channel").await);
     }
@@ -193,7 +189,7 @@ async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
-    check_msg(&msg.channel_id.say(&ctx.http, "Pong!").await);
+    check_msg(&msg.reply(&ctx.http, "Pong!").await);
     Ok(())
 }
 
@@ -204,8 +200,7 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         Ok(url) => url,
         Err(_) => {
             check_msg(
-                &msg.channel_id
-                    .say(&ctx.http, "Must provide a URL to a video or audio")
+                &msg.reply(&ctx.http, "Must provide a URL to a video or audio")
                     .await,
             );
 
@@ -231,19 +226,39 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
-
+        handler.stop();
         let src = if do_search {
             YoutubeDl::new_search(http_client, url)
         } else {
             YoutubeDl::new(http_client, url)
         };
         let _ = handler.play_input(src.clone().into());
-
-        check_msg(&msg.channel_id.say(&ctx.http, "Playing song").await);
     } else {
         check_msg(
-            &msg.channel_id
-                .say(&ctx.http, "Not in a voice channel to play in")
+            &msg.reply(&ctx.http, "Not in a voice channel to play in")
+                .await,
+        );
+    }
+
+    Ok(())
+}
+
+#[command]
+#[only_in(guilds)]
+async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
+    let guild_id = msg.guild_id.unwrap();
+    let manager = songbird::get(ctx)
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let mut handler = handler_lock.lock().await;
+        handler.stop();
+        add_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
+    } else {
+        check_msg(
+            &msg.reply(&ctx.http, "Not in a voice channel to pause")
                 .await,
         );
     }
@@ -259,9 +274,10 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
         - !join: Joins the voice channel you are currently in.\n\
         - !leave: Leaves the current voice channel.\n\
         - !play <url/search term>: Plays an audio track from a URL or searches YouTube.\n\
+        - !stop: stops the current audio.\n\
         - !report <text>: Sends the provided text to the game master assistant and displays the answer. Use reaction to read the response aloud.";
 
-    check_msg(&msg.channel_id.say(&ctx.http, help_text).await);
+    check_msg(&msg.reply(&ctx.http, help_text).await);
     Ok(())
 }
 
@@ -464,7 +480,7 @@ async fn text_to_speech(
         .header("Authorization", format!("Bearer {}", openai_api_key))
         .header("Content-Type", "application/json")
         .json(&json!({
-            "model": "tts-1-hd", //FIXME try tts-1
+            "model": "tts-1",
             "input": text,
             "response_format": "opus",
             "voice": "onyx",
@@ -507,6 +523,7 @@ async fn read_local_audio(
 
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
+        handler.stop();
 
         let mut file = std::fs::File::open(audio_path)
             .map_err(|e| format!("Failed to open file: {} - {}", audio_path, e))?;
@@ -519,7 +536,7 @@ async fn read_local_audio(
         Ok(())
     } else {
         let error_message = "Not in a voice channel to play in";
-        check_msg(&msg.channel_id.say(&ctx.http, error_message).await);
+        check_msg(&msg.reply(&ctx.http, error_message).await);
         Err(error_message.into())
     }
 }
@@ -532,19 +549,13 @@ async fn report(ctx: &Context, msg_user: &Message) -> CommandResult {
     match handle_report(ctx, msg_user, prompt).await {
         Ok(_) => Ok(()),
         Err(e) => {
-            check_msg(
-                &msg_user
-                    .channel_id
-                    .say(&ctx.http, format!("Error: {}", e))
-                    .await,
-            );
+            check_msg(&msg_user.reply(&ctx.http, format!("Error: {}", e)).await);
             Err(e.into()) // Or handle the error differently if needed
         }
     }
 }
 
 const EMOJI_SOUND: &str = "🔊";
-const EMOJI_TIME: &str = "⏱️";
 const EMOJI_WAIT: &str = "⏳";
 const EMOJI_DONE: &str = "✅";
 fn emoji(e: &str) -> serenity::all::ReactionType {
@@ -575,11 +586,13 @@ async fn handle_report(
     let assistant_request = AssistantRequest { prompt };
     let text_generated = run_completion(assistant_request).await?;
 
-    let msg_generated = msg_user.channel_id.say(&ctx.http, &text_generated).await?;
+    let msg_generated = msg_user.reply(&ctx.http, &text_generated).await?;
     debug!("delete_reaction msg_user EMOJI_WAIT",);
     delete_reaction(ctx, msg_user, emoji(EMOJI_WAIT)).await?;
     debug!("add_reaction msg_user EMOJI_DONE",);
     add_reaction(ctx, &msg_user, emoji(EMOJI_DONE).clone()).await?;
+    debug!("add_reaction msg_generated EMOJI_SOUND",);
+    add_reaction(ctx, &msg_generated, emoji(EMOJI_SOUND)).await?;
 
     let file_path: String = format!("{}{}", ASSETS_DIR, generate_file_hash(&text_generated));
     let text_path = format!("{}.txt", file_path);
@@ -609,11 +622,19 @@ async fn react_and_handle_response(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     let msg_generated2 = msg.clone();
 
-    debug!("add_reaction msg EMOJI_SOUND",);
-    add_reaction(ctx, &msg, emoji(EMOJI_SOUND)).await?;
-    let collector = collect_reaction(ctx, &msg).await;
+    loop {
+        let collector = msg
+            .await_reaction(ctx)
+            .timeout(Duration::from_secs(600))
+            .await;
 
-    if let Some(reaction) = collector {
+        if collector.is_none() {
+            return Ok(());
+        }
+        let reaction = collector.unwrap();
+        if reaction.emoji != emoji(EMOJI_SOUND) {
+            continue;
+        }
         debug!("delete_reaction msg EMOJI_SOUND",);
         delete_reaction(ctx, &msg, emoji(EMOJI_SOUND)).await?;
         debug!("add_reaction msg EMOJI_WAIT",);
@@ -627,13 +648,14 @@ async fn react_and_handle_response(
             reaction,
         )
         .await?;
-    }
-    debug!("delete_reaction msg EMOJI_WAIT",);
-    delete_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
-    debug!("add_reaction msg EMOJI_TIME",);
-    add_reaction(ctx, &msg, emoji(EMOJI_TIME)).await?;
 
-    Ok(())
+        debug!("delete_reaction msg EMOJI_WAIT",);
+        delete_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
+        debug!("add_reaction msg EMOJI_DONE",);
+        add_reaction(ctx, &msg, emoji(EMOJI_DONE)).await?;
+
+        return Ok(());
+    }
 }
 
 async fn add_reaction(
@@ -643,15 +665,6 @@ async fn add_reaction(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     msg.react(&ctx.http, reaction).await?;
     Ok(())
-}
-
-async fn collect_reaction(
-    ctx: &Context,
-    msg: &Message,
-) -> Option<serenity::model::channel::Reaction> {
-    msg.await_reaction(ctx)
-        .timeout(Duration::from_secs(600))
-        .await
 }
 
 async fn delete_reaction(
