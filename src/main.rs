@@ -4,14 +4,11 @@
 // But with deprecation warnings
 #![allow(deprecated)]
 
-// Compiler error in rustc 1.83.0
-// Working in rustc 1.84.0-beta.3
-// https://github.com/rust-lang/rust/issues/133864
-
 use std::io::Read;
 use std::time::Duration;
 use std::{env, error::Error};
 
+use songbird::id::GuildId;
 // This trait adds the `register_songbird` and `register_songbird_with` methods
 // to the client builder below, making it easy to install this voice client.
 // The voice client can be retrieved in any command using `songbird::get(ctx).await`.
@@ -21,7 +18,7 @@ use songbird::SerenityInit;
 use songbird::events::{Event, EventContext, EventHandler as VoiceEventHandler, TrackEvent};
 
 // To turn user URLs into playable audio, we'll use yt-dlp.
-use songbird::input::YoutubeDl;
+use songbird::input::{Input, YoutubeDl};
 
 // YtDl requests need an HTTP client to operate -- we'll create and store our own.
 use reqwest::Client as HttpClient;
@@ -39,7 +36,7 @@ use serenity::{
         },
         StandardFramework,
     },
-    model::{channel::Message, gateway::Ready},
+    model::{channel::Message, gateway::Ready, prelude::ReactionType},
     prelude::{GatewayIntents, TypeMapKey},
     Result as SerenityResult,
 };
@@ -47,7 +44,7 @@ use serenity::{
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use tokio::io::AsyncWriteExt;
-use tracing::info;
+use tracing::{debug, info, warn};
 
 use futures::StreamExt;
 
@@ -62,15 +59,12 @@ struct Handler;
 #[async_trait]
 impl EventHandler for Handler {
     async fn ready(&self, _: Context, ready: Ready) {
-        println!("{} is connected!", ready.user.name);
+        info!("{} is connected!", ready.user.name);
     }
 }
 
 #[group]
-#[commands(
-    deafen, join, leave, mute, play, ping, undeafen, unmute, help, report, play2, report2, react1,
-    react2, react3
-)]
+#[commands(join, leave, play, stop, ping, help, report)]
 struct General;
 
 #[tokio::main]
@@ -91,7 +85,7 @@ async fn main() {
         .framework(framework)
         .register_songbird()
         // We insert our own HTTP client here to make use of in
-        // `~play`. If we wanted, we could supply cookies and auth
+        // `!play`. If we wanted, we could supply cookies and auth
         // details ahead of time.
         //
         // Generally, we don't want to make a new Client for every request!
@@ -103,49 +97,11 @@ async fn main() {
         let _ = client
             .start()
             .await
-            .map_err(|why| println!("Client ended: {:?}", why));
+            .map_err(|why| warn!("Client ended: {:?}", why));
     });
 
     let _signal_err = tokio::signal::ctrl_c().await;
-    println!("Received Ctrl-C, shutting down.");
-}
-
-#[command]
-#[only_in(guilds)]
-async fn deafen(ctx: &Context, msg: &Message) -> CommandResult {
-    let guild_id = msg.guild_id.unwrap();
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    let handler_lock = match manager.get(guild_id) {
-        Some(handler) => handler,
-        None => {
-            check_msg(msg.reply(ctx, "Not in a voice channel").await);
-
-            return Ok(());
-        }
-    };
-
-    let mut handler = handler_lock.lock().await;
-
-    if handler.is_deaf() {
-        check_msg(msg.channel_id.say(&ctx.http, "Already deafened").await);
-    } else {
-        if let Err(e) = handler.deafen(true).await {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, format!("Failed: {:?}", e))
-                    .await,
-            );
-        }
-
-        check_msg(msg.channel_id.say(&ctx.http, "Deafened").await);
-    }
-
-    Ok(())
+    info!("Received Ctrl-C, shutting down.");
 }
 
 #[command]
@@ -164,7 +120,7 @@ async fn join(ctx: &Context, msg: &Message) -> CommandResult {
     let connect_to = match channel_id {
         Some(channel) => channel,
         None => {
-            check_msg(msg.reply(ctx, "Not in a voice channel").await);
+            check_msg(&msg.reply(ctx, "Not in a voice channel").await);
 
             return Ok(());
         }
@@ -191,7 +147,7 @@ impl VoiceEventHandler for TrackErrorNotifier {
     async fn act(&self, ctx: &EventContext<'_>) -> Option<Event> {
         if let EventContext::Track(track_list) = ctx {
             for (state, handle) in *track_list {
-                println!(
+                warn!(
                     "Track {:?} encountered an error: {:?}",
                     handle.uuid(),
                     state.playing
@@ -216,54 +172,12 @@ async fn leave(ctx: &Context, msg: &Message) -> CommandResult {
 
     if has_handler {
         if let Err(e) = manager.remove(guild_id).await {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, format!("Failed: {:?}", e))
-                    .await,
-            );
+            check_msg(&msg.reply(&ctx.http, format!("Failed: {:?}", e)).await);
         }
 
-        check_msg(msg.channel_id.say(&ctx.http, "Left voice channel").await);
+        check_msg(&msg.reply(&ctx.http, "Left voice channel").await);
     } else {
-        check_msg(msg.reply(ctx, "Not in a voice channel").await);
-    }
-
-    Ok(())
-}
-
-#[command]
-#[only_in(guilds)]
-async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
-    let guild_id = msg.guild_id.unwrap();
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    let handler_lock = match manager.get(guild_id) {
-        Some(handler) => handler,
-        None => {
-            check_msg(msg.reply(ctx, "Not in a voice channel").await);
-
-            return Ok(());
-        }
-    };
-
-    let mut handler = handler_lock.lock().await;
-
-    if handler.is_mute() {
-        check_msg(msg.channel_id.say(&ctx.http, "Already muted").await);
-    } else {
-        if let Err(e) = handler.mute(true).await {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, format!("Failed: {:?}", e))
-                    .await,
-            );
-        }
-
-        check_msg(msg.channel_id.say(&ctx.http, "Now muted").await);
+        check_msg(&msg.reply(ctx, "Not in a voice channel").await);
     }
 
     Ok(())
@@ -271,7 +185,7 @@ async fn mute(ctx: &Context, msg: &Message) -> CommandResult {
 
 #[command]
 async fn ping(ctx: &Context, msg: &Message) -> CommandResult {
-    check_msg(msg.channel_id.say(&ctx.http, "Pong!").await);
+    check_msg(&msg.reply(&ctx.http, "Pong!").await);
     Ok(())
 }
 
@@ -282,8 +196,7 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
         Ok(url) => url,
         Err(_) => {
             check_msg(
-                msg.channel_id
-                    .say(&ctx.http, "Must provide a URL to a video or audio")
+                &msg.reply(&ctx.http, "Must provide a URL to a video or audio")
                     .await,
             );
 
@@ -309,19 +222,16 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
-
+        handler.stop();
         let src = if do_search {
             YoutubeDl::new_search(http_client, url)
         } else {
             YoutubeDl::new(http_client, url)
         };
         let _ = handler.play_input(src.clone().into());
-
-        check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
     } else {
         check_msg(
-            msg.channel_id
-                .say(&ctx.http, "Not in a voice channel to play in")
+            &msg.reply(&ctx.http, "Not in a voice channel to play in")
                 .await,
         );
     }
@@ -331,9 +241,8 @@ async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 
 #[command]
 #[only_in(guilds)]
-async fn undeafen(ctx: &Context, msg: &Message) -> CommandResult {
+async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
     let guild_id = msg.guild_id.unwrap();
-
     let manager = songbird::get(ctx)
         .await
         .expect("Songbird Voice client placed in at initialisation.")
@@ -341,51 +250,11 @@ async fn undeafen(ctx: &Context, msg: &Message) -> CommandResult {
 
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
-        if let Err(e) = handler.deafen(false).await {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, format!("Failed: {:?}", e))
-                    .await,
-            );
-        }
-
-        check_msg(msg.channel_id.say(&ctx.http, "Undeafened").await);
+        handler.stop();
+        add_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
     } else {
         check_msg(
-            msg.channel_id
-                .say(&ctx.http, "Not in a voice channel to undeafen in")
-                .await,
-        );
-    }
-
-    Ok(())
-}
-
-#[command]
-#[only_in(guilds)]
-async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
-    let guild_id = msg.guild_id.unwrap();
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    if let Some(handler_lock) = manager.get(guild_id) {
-        let mut handler = handler_lock.lock().await;
-        if let Err(e) = handler.mute(false).await {
-            check_msg(
-                msg.channel_id
-                    .say(&ctx.http, format!("Failed: {:?}", e))
-                    .await,
-            );
-        }
-
-        check_msg(msg.channel_id.say(&ctx.http, "Unmuted").await);
-    } else {
-        check_msg(
-            msg.channel_id
-                .say(&ctx.http, "Not in a voice channel to unmute in")
+            &msg.reply(&ctx.http, "Not in a voice channel to pause")
                 .await,
         );
     }
@@ -396,42 +265,23 @@ async fn unmute(ctx: &Context, msg: &Message) -> CommandResult {
 //Custom command to display other commands
 #[command]
 async fn help(ctx: &Context, msg: &Message) -> CommandResult {
-    let help_text = "Available commands:
-- !ping: Responds with 'Pong!'
-- !join: Joins the voice channel you are currently in.
-- !leave: Leaves the current voice channel.
-- !play <url/search term>: Plays an audio track from a URL or searches YouTube.
-- !mute: Mutes the bot in the voice channel.
-- !unmute: Unmutes the bot in the voice channel.
-- !deafen: Deafens the bot in the voice channel.
-- !undeafen: Undeafens the bot in the voice channel.
-- !report <text>: Sends the provided text to the game master assistant and displays the response.";
+    let help_text = "Available commands:\n\
+        - !help: Displays this help message.\n\
+        - !ping: Responds with 'Pong!'\n\
+        - !join: Joins the voice channel you are currently in.\n\
+        - !leave: Leaves the current voice channel.\n\
+        - !play <url/search term>: Plays an audio track from a URL or searches YouTube.\n\
+        - !stop: stops the current audio.\n\
+        - !report <text>: Sends the provided text to the game master assistant and displays the answer. Use reaction to read the response aloud.";
 
-    check_msg(msg.channel_id.say(&ctx.http, help_text).await);
-    Ok(())
-}
-
-//Custom command to call AI
-#[command]
-async fn report(ctx: &Context, msg: &Message) -> CommandResult {
-    let assistant_request = AssistantRequest {
-        prompt: msg.content[8..].to_string(),
-    };
-    match run_completion(assistant_request).await {
-        Ok(response) => {
-            check_msg(msg.channel_id.say(&ctx.http, &response).await);
-        }
-        Err(e) => {
-            check_msg(msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await);
-        }
-    }
+    check_msg(&msg.reply(&ctx.http, help_text).await);
     Ok(())
 }
 
 /// Checks that a message successfully sent; if not, then logs why to stdout.
-fn check_msg(result: SerenityResult<Message>) {
+fn check_msg(result: &SerenityResult<Message>) {
     if let Err(why) = result {
-        println!("Error sending message: {:?}", why);
+        warn!("Error sending message: {:?}", why);
     }
 }
 
@@ -469,7 +319,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
         .send()
         .await?;
 
-    info!(
+    debug!(
         "POST https://api.openai.com/v1/threads/{}/messages {:?}",
         //no json data here, we only care whether status is OK
         thread_id,
@@ -496,7 +346,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
         .send()
         .await?;
 
-    info!(
+    debug!(
         "POST https://api.openai.com/v1/threads/{}/runs {:?}",
         thread_id, run_resp
     );
@@ -509,7 +359,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
         return Err(format!("Error creating run: {}", err_text).into());
     }
     let run_resp_data: serde_json::Value = run_resp.json().await?;
-    info!(
+    debug!(
         "POST https://api.openai.com/v1/threads/{}/runs {:?}",
         thread_id, run_resp_data
     );
@@ -522,7 +372,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
     // Step 3: Wait for the run to complete
     let mut run_status = String::from("queued"); // or whatever the initial status is
     let mut run_status_data: serde_json::Value = serde_json::Value::Object(serde_json::Map::new());
-    while run_status == "queued" || run_status == "in_progress" {
+    while run_status == "queued" || run_status == "in_progress" || run_status == "unknown" {
         tokio::time::sleep(std::time::Duration::from_secs(1)).await; // Check every second
 
         let run_status_resp = client
@@ -544,7 +394,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
         }
 
         run_status_data = run_status_resp.json().await?;
-        info!(
+        debug!(
             "GET https://api.openai.com/v1/threads/{}/runs/{}/steps {:?}",
             thread_id, run_id, run_status_data
         );
@@ -563,12 +413,6 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
         return Err(format!("Error checking run_status_json").into());
     }
 
-    //FIXME
-    info!(
-        "DEBUG LAST GET https://api.openai.com/v1/threads/{}/runs/{}/steps {:?} ; run_status={}",
-        thread_id, run_id, run_status_data, run_status
-    );
-
     let message_id = run_status_data
         .get("data")
         .and_then(|data| data.as_array())
@@ -578,7 +422,10 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
         .and_then(|msg_creation| msg_creation.get("message_id"))
         .and_then(|id| id.as_str())
         .map(String::from)
-        .ok_or("message_id not found in step details")?;
+        .ok_or(format!(
+            "message_id not found in step details, run_status_data={}, run_status={}",
+            run_status_data, run_status,
+        ))?;
 
     // Step 4: Retrieve the message (after run completion)
     let message_response: reqwest::Response = client
@@ -600,7 +447,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
     }
 
     let message_data: serde_json::Value = message_response.json().await?;
-    info!(
+    debug!(
         "GET https://api.openai.com/v1/threads/{}/messages/{} {:?}",
         thread_id, message_id, message_data
     );
@@ -617,41 +464,7 @@ async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error +
     Ok(latest_message.to_string())
 }
 
-//FIXME debug, play a local audio
-#[command]
-#[only_in(guilds)]
-async fn play2(ctx: &Context, msg: &Message) -> CommandResult {
-    let guild_id = msg.guild_id.unwrap();
-
-    let manager = songbird::get(ctx)
-        .await
-        .expect("Songbird Voice client placed in at initialisation.")
-        .clone();
-
-    if let Some(handler_lock) = manager.get(guild_id) {
-        let mut handler = handler_lock.lock().await;
-
-        let audio_path = "assets/speech.mp3";
-        let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
-        let mut audio_data = Vec::new();
-        file.read_to_end(&mut audio_data)
-            .expect("Failed to read file data");
-        let src = songbird::input::Input::from(audio_data);
-        let _ = handler.play_input(src.into());
-
-        check_msg(msg.channel_id.say(&ctx.http, "Playing song").await);
-    } else {
-        check_msg(
-            msg.channel_id
-                .say(&ctx.http, "Not in a voice channel to play in")
-                .await,
-        );
-    }
-
-    Ok(())
-}
-
-//FIXME The maximum length is 4096 characters.
+//The maximum length is 4096 characters.
 async fn text_to_speech(
     text: &str,
     destination_path: &str,
@@ -664,10 +477,11 @@ async fn text_to_speech(
         .header("Authorization", format!("Bearer {}", openai_api_key))
         .header("Content-Type", "application/json")
         .json(&json!({
-            "model": "tts-1", //FIXME try tts-1-hd
+            "model": "tts-1",
             "input": text,
-            "response_format": "mp3",
-            "voice": "onyx"
+            "response_format": "opus",
+            "voice": "onyx",
+            "speed": "1.5"
         }))
         .send()
         .await?;
@@ -691,134 +505,218 @@ async fn text_to_speech(
     Ok(())
 }
 
-//FIXME debug
+async fn read_local_audio(
+    ctx: &Context,
+    guild_id: GuildId,
+    msg: &Message,
+    audio_path: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    debug!("read_local_audio {}", audio_path);
+
+    let manager = songbird::get(ctx)
+        .await
+        .expect("Songbird Voice client placed in at initialisation.")
+        .clone();
+
+    if let Some(handler_lock) = manager.get(guild_id) {
+        let mut handler = handler_lock.lock().await;
+        handler.stop();
+
+        let mut file = std::fs::File::open(audio_path)
+            .map_err(|e| format!("Failed to open file: {} - {}", audio_path, e))?;
+        let mut audio_data = Vec::new();
+        file.read_to_end(&mut audio_data)
+            .map_err(|e| format!("Failed to read file data: {}", e))?;
+        let src = Input::from(audio_data);
+
+        handler.play_input(src.into());
+        Ok(())
+    } else {
+        let error_message = "Not in a voice channel to play in";
+        check_msg(&msg.reply(&ctx.http, error_message).await);
+        Err(error_message.into())
+    }
+}
+
 #[command]
-async fn report2(ctx: &Context, msg: &Message) -> CommandResult {
-    let assistant_request = AssistantRequest {
-        prompt: msg.content[8..].to_string(),
-    };
-    match run_completion(assistant_request).await {
-        Ok(response) => {
-            check_msg(msg.channel_id.say(&ctx.http, &response).await);
-            text_to_speech(&response, "assets/speech1.mp3")
-                .await
-                .unwrap();
+#[only_in(guilds)]
+async fn report(ctx: &Context, msg_user: &Message) -> CommandResult {
+    let prompt = msg_user.content[8..].to_string();
 
-            let guild_id = msg.guild_id.unwrap();
-
-            let manager = songbird::get(ctx)
-                .await
-                .expect("Songbird Voice client placed in at initialisation.")
-                .clone();
-
-            if let Some(handler_lock) = manager.get(guild_id) {
-                let mut handler = handler_lock.lock().await;
-
-                let audio_path = "assets/speech1.mp3";
-                let mut file = std::fs::File::open(audio_path).expect("Failed to open file");
-                let mut audio_data = Vec::new();
-                file.read_to_end(&mut audio_data)
-                    .expect("Failed to read file data");
-                let src = songbird::input::Input::from(audio_data);
-                let _ = handler.play_input(src.into());
-
-                check_msg(msg.channel_id.say(&ctx.http, "Playing transcript").await);
-            } else {
-                check_msg(
-                    msg.channel_id
-                        .say(&ctx.http, "Not in a voice channel to play in")
-                        .await,
-                );
-            }
-        }
+    match handle_report(ctx, msg_user, prompt).await {
+        Ok(_) => Ok(()),
         Err(e) => {
-            check_msg(msg.channel_id.say(&ctx.http, format!("Error: {}", e)).await);
+            check_msg(&msg_user.reply(&ctx.http, format!("Error: {}", e)).await);
+            Err(e.into()) // Or handle the error differently if needed
         }
     }
+}
+
+const EMOJI_SOUND: &str = "🔊";
+const EMOJI_WAIT: &str = "⏳";
+const EMOJI_DONE: &str = "✅";
+fn emoji(e: &str) -> serenity::all::ReactionType {
+    return ReactionType::Unicode(e.to_string());
+}
+
+fn pre_prompt(user: &serenity::model::user::User) -> &str {
+    match user.id.get() {
+        607653619122307123 => "Comm dit:",
+        374989552646881281 => "Explo dit:",
+        518896639608619022 => "Secu dit:",
+        _ => {
+            warn!("Unknown user id={}", user.id);
+            return "";
+        }
+    }
+}
+
+async fn handle_report(
+    ctx: &Context,
+    msg_user: &Message,
+    mut prompt: String,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    prompt = format!("{}{}", pre_prompt(&msg_user.author), prompt);
+    let prompt2 = prompt.clone();
+    add_reaction(ctx, &msg_user, emoji(EMOJI_WAIT)).await?;
+
+    let assistant_request = AssistantRequest { prompt };
+    let text_generated = run_completion(assistant_request).await?;
+
+    let msg_generated = msg_user.reply(&ctx.http, &text_generated).await?;
+    debug!("delete_reaction msg_user EMOJI_WAIT",);
+    delete_reaction(ctx, msg_user, emoji(EMOJI_WAIT)).await?;
+    debug!("add_reaction msg_user EMOJI_DONE",);
+    add_reaction(ctx, &msg_user, emoji(EMOJI_DONE).clone()).await?;
+    debug!("add_reaction msg_generated EMOJI_SOUND",);
+    add_reaction(ctx, &msg_generated, emoji(EMOJI_SOUND)).await?;
+
+    let file_path: String = format!("{}{}", ASSETS_DIR, generate_file_hash(&text_generated));
+    let text_path = format!("{}.txt", file_path);
+
+    let text_content: String = format!("{}\n---\n{}", prompt2, text_generated);
+    std::fs::write(text_path, text_content).unwrap();
+
+    let guild_id = msg_user.guild_id.unwrap();
+
+    react_and_handle_response(
+        ctx,
+        guild_id.into(),
+        msg_generated,
+        text_generated,
+        file_path.as_str(),
+    )
+    .await?;
     Ok(())
 }
 
-use serenity::model::prelude::ReactionType;
+async fn react_and_handle_response(
+    ctx: &Context,
+    guild_id: GuildId,
+    msg: Message,
+    text_generated: String,
+    hash_file_name: &str,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    let msg_generated2 = msg.clone();
 
-#[command]
-async fn react1(ctx: &Context, msg: &Message) -> CommandResult {
-    match msg
-        .react(&ctx.http, ReactionType::Unicode("🔊".to_string()))
-        .await
-    {
-        Ok(_) => Ok(()),
-        Err(why) => {
-            check_msg(
-                msg.reply(ctx, &format!("Failed to add reaction: {:?}", why))
-                    .await,
-            );
-            Err(why.into()) // Propagate the error for logging and better debugging
-        }
-    }
-}
+    loop {
+        let collector = msg
+            .await_reaction(ctx)
+            .timeout(Duration::from_secs(600))
+            .await;
 
-#[command]
-async fn react2(ctx: &Context, msg: &Message) -> CommandResult {
-    let content = msg.content[8..].to_string();
-    info!("content = {}", content);
-
-    let reaction_type = match content.as_str() {
-        "recycle" | "♻️" => ReactionType::Unicode("♻️".to_string()),
-        "speaker" | "sound" | "🔊" => ReactionType::Unicode("🔊".to_string()),
-        _ => {
-            check_msg(
-                msg.reply(
-                    ctx,
-                    "Invalid reaction type. Use 'recycle', '♻️', 'speaker', 'sound', or '🔊'",
-                )
-                .await,
-            );
+        if collector.is_none() {
             return Ok(());
         }
-    };
-
-    // Add error handling for reaction addition, including rate limits and permission issues
-    match msg.react(&ctx.http, reaction_type).await {
-        Ok(_) => Ok(()),
-        Err(why) => {
-            check_msg(
-                msg.reply(ctx, &format!("Failed to add reaction: {:?}", why))
-                    .await,
-            );
-            Err(why.into()) // Propagate the error for logging and better debugging
+        let reaction = collector.unwrap();
+        if reaction.emoji != emoji(EMOJI_SOUND) {
+            continue;
         }
+        debug!("delete_reaction msg EMOJI_SOUND",);
+        delete_reaction(ctx, &msg, emoji(EMOJI_SOUND)).await?;
+        debug!("add_reaction msg EMOJI_WAIT",);
+        add_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
+        handle_reaction(
+            ctx,
+            guild_id,
+            &msg_generated2,
+            &text_generated,
+            hash_file_name,
+            reaction,
+        )
+        .await?;
+
+        debug!("delete_reaction msg EMOJI_WAIT",);
+        delete_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
+        debug!("add_reaction msg EMOJI_DONE",);
+        add_reaction(ctx, &msg, emoji(EMOJI_DONE)).await?;
+
+        return Ok(());
     }
 }
 
-#[command]
-async fn react3(ctx: &Context, msg: &Message) -> CommandResult {
-    // React to the message with a specific emoji
-    msg.react(&ctx.http, ReactionType::Unicode("🔊".to_string()))
-        .await?;
+async fn add_reaction(
+    ctx: &Context,
+    msg: &Message,
+    reaction: ReactionType,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    msg.react(&ctx.http, reaction).await?;
+    Ok(())
+}
 
-    // Set up a reaction collector
-    if let Some(reaction) = &msg
-        .await_reaction(&ctx)
-        .timeout(Duration::from_secs(60)) // How long to wait for a reaction
-        .author_id(msg.author.id) // Only listen to the message author's reactions
-        .await
-    {
-        // Check if the reaction matches the one we added
-        if let ReactionType::Unicode(ref emoji) = reaction.emoji {
-            if emoji == "🔊" {
-                // Do something when the user reacts with the specified emoji
-                msg.reply(&ctx.http, "You clicked the 🔊 reaction!").await?;
-            } else {
-                // Handle unexpected reactions
-                msg.reply(&ctx.http, "That's not the reaction I was looking for!")
-                    .await?;
+async fn delete_reaction(
+    ctx: &Context,
+    msg: &Message,
+    reaction: ReactionType,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    msg.delete_reaction(&ctx.http, None, reaction).await?;
+    Ok(())
+}
+
+const ASSETS_DIR: &str = "assets/";
+
+async fn handle_reaction(
+    ctx: &Context,
+    guild_id: GuildId,
+    msg: &Message,
+    text_generated: &str,
+    hash_file_name: &str,
+    reaction: serenity::model::channel::Reaction,
+) -> Result<(), Box<dyn Error + Send + Sync>> {
+    if let ReactionType::Unicode(emoji) = reaction.emoji {
+        if emoji == EMOJI_SOUND {
+            let ctx = ctx.clone();
+            let audio_path = format!("{}.opus", hash_file_name);
+
+            match text_to_speech(text_generated, &audio_path).await {
+                Ok(_) => {
+                    if let Err(why) = read_local_audio(&ctx, guild_id, msg, &audio_path).await {
+                        check_msg(
+                            &msg.reply(&ctx.http, &format!("Audio playback failed: {:?}", why))
+                                .await,
+                        );
+                        return Err(why);
+                    }
+                }
+                Err(why) => {
+                    check_msg(
+                        &msg.reply(&ctx.http, &format!("Text-to-speech failed: {:?}", why))
+                            .await,
+                    );
+                    return Err(why);
+                }
             }
         }
-    } else {
-        // Timeout case: no reaction received
-        msg.reply(&ctx.http, "No reaction received in time.")
-            .await?;
     }
-
     Ok(())
+}
+
+use sha2::{Digest, Sha256};
+
+fn generate_file_hash(text_generated: &str) -> String {
+    let mut hasher = Sha256::new();
+    hasher.update(text_generated.as_bytes());
+    let result = hasher.finalize();
+    let hash_hex = hex::encode(result);
+    hash_hex[..8].to_string()
 }
