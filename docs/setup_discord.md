@@ -6,7 +6,7 @@
 
 https://discord.com/developers/applications/1313281715808112650/installation
 
-![Discord installation](docs/screencapture-discord-developers-applications-1313281715808112650-installation-2024-12-03-11_54_57.png)
+![Discord installation](screencapture-discord-developers-applications-1313281715808112650-installation-2024-12-03-11_54_57.png)
 
 - Installation Contexts: 
     - Guild Install: On 
@@ -27,7 +27,7 @@ https://discord.com/developers/applications/1313281715808112650/installation
 
 https://discord.com/developers/applications/1313281715808112650/bot
 
-![Discord bot](docs/screencapture-discord-developers-applications-1313281715808112650-bot-2024-12-03-11_39_20.png)
+![Discord bot](screencapture-discord-developers-applications-1313281715808112650-bot-2024-12-03-11_39_20.png)
 
 - Server Members Intent: On
 - Message Content Intent: On

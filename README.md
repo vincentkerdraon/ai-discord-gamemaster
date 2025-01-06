@@ -1,5 +1,9 @@
 # AI-Discord-GameMaster
 
+## Doc 
+
+- [setup_discord](docs/setup_discord.md)
+- [setup_openAI](docs/setup_openAI.md)
 
 ## Release
 
