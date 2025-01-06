@@ -10,7 +10,7 @@ Create in playground.
 
 Validate: https://platform.openai.com/docs/api-reference/assistants/getAssistant
 ```bash
- export OPENAI_API_KEY=sk-abc
+export OPENAI_API_KEY=sk-abc
 export ASSISTANT_ID=asst_uQJ4xO4Rx1HvVhajwkGJoOzj
 curl https://api.openai.com/v1/assistants/$ASSISTANT_ID \
   -H "Content-Type: application/json" \
@@ -26,19 +26,19 @@ curl https://api.openai.com/v1/threads/runs \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
   -H "Content-Type: application/json" \
   -H "OpenAI-Beta: assistants=v2" \
-  -d '{
-      "assistant_id": "$ASSISTANT_ID",
-      "thread": {
-        "messages": [
-          {"role": "user", "content": "Explain deep learning to a 5 year old."}
+  -d "{
+      \"assistant_id\": \"$ASSISTANT_ID\",
+      \"thread\": {
+        \"messages\": [
+          {\"role\": \"user\", \"content\": \"Explain deep learning to a 5 year old.\"}
         ]
       }
-    }'
+    }"
 ```
 
 Validate: https://platform.openai.com/docs/api-reference/messages/listMessages
 ```bash
-export THREAD_ID="thread_Ur2NyQm7FdM2ggbl7MF12PSg"
+export THREAD_ID="thread_6yBD6cbBqPajWPI1Tvmj3aIR"
 curl https://api.openai.com/v1/threads/$THREAD_ID/messages \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
@@ -80,7 +80,7 @@ curl https://api.openai.com/v1/threads/$THREAD_ID/runs \
 
 https://platform.openai.com/docs/api-reference/run-steps/getRunStep
 ```bash
-export RUN_ID=run_AYkRsqL2C4OlLxxjDeP5B4cF
+export RUN_ID=run_Ij9Xbx3PeCtuvpsw6AKnfCEA
 curl https://api.openai.com/v1/threads/$THREAD_ID/runs/$RUN_ID/steps \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
   -H "Content-Type: application/json" \
@@ -97,7 +97,7 @@ curl https://api.openai.com/v1/threads/thread_Ur2NyQm7FdM2ggbl7MF12PSg/runs/run_
 
 https://platform.openai.com/docs/api-reference/messages/getMessage
 ```bash
-export MESSAGE_ID=msg_OPNBFBdrhXVCZyBx2VS2fqCG
+export MESSAGE_ID=msg_eqCQ627WLmm56PmeD19EBIgE
 curl https://api.openai.com/v1/threads/$THREAD_ID/messages/$MESSAGE_ID \
   -H "Content-Type: application/json" \
   -H "Authorization: Bearer $OPENAI_API_KEY" \
