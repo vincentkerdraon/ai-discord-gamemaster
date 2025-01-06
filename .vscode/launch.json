@@ -8,9 +8,9 @@
             "type": "lldb",
             "request": "launch",
             "name": "Debug",
-            "program": "${workspaceFolder}/ai-discord-gamemaster/target/debug/ai-discord-gamemaster",
+            "program": "${workspaceFolder}/target/debug/ai-discord-gamemaster",
             "args": [],
-            "cwd": "${workspaceFolder}/ai-discord-gamemaster",
+            "cwd": "${workspaceFolder}",
             "env": {
                 "RUST_LOG": "warn,ai_discord_gamemaster=info",
                 "RUST_BACKTRACE": "1",

@@ -65,8 +65,10 @@ dependencies = [
 name = "ai-discord-gamemaster"
 version = "1.0.0"
 dependencies = [
+ "discord",
  "futures",
  "hex",
+ "openai_api",
  "reqwest",
  "serde",
  "serde_json",
@@ -551,6 +553,25 @@ checksum = "9ed9a281f7bc9b7576e61468ba615a66a5c8cfdff42420a70aa82701a3b1e292"
 dependencies = [
  "block-buffer",
  "crypto-common",
+]
+
+[[package]]
+name = "discord"
+version = "1.0.0"
+dependencies = [
+ "futures",
+ "hex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serenity",
+ "sha2",
+ "songbird",
+ "symphonia",
+ "tokio",
+ "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
 ]
 
 [[package]]
@@ -1465,6 +1486,22 @@ name = "opaque-debug"
 version = "0.3.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c08d65885ee38876c4f86fa503fb49d7b507c2b62552df7c70b2fce627e06381"
+
+[[package]]
+name = "openai_api"
+version = "1.0.0"
+dependencies = [
+ "futures",
+ "hex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tokio",
+ "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
+]
 
 [[package]]
 name = "openssl"
