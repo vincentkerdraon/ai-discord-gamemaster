@@ -7,11 +7,7 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use text_completion::RequestHandler;
 
-use ::serenity::{
-    all::{Message, User},
-    prelude::TypeMapKey,
-    Result,
-};
+use ::serenity::{all::Message, prelude::TypeMapKey, Result};
 
 use tracing::warn;
 
@@ -27,18 +23,6 @@ fn check_msg(result: &Result<Message>) {
 }
 
 const ASSETS_DIR: &str = "assets/";
-
-fn pre_prompt(user: &User) -> &str {
-    match user.id.get() {
-        607653619122307123 => "Comm dit:",
-        374989552646881281 => "Explo dit:",
-        518896639608619022 => "Secu dit:",
-        _ => {
-            warn!("Unknown user id={}", user.id);
-            return "";
-        }
-    }
-}
 
 pub struct HttpKey;
 

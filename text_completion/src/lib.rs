@@ -18,4 +18,6 @@ pub trait RequestHandler {
         destination_path: &str,
         result: Sender<Result<(), Box<dyn Error + Send + Sync>>>,
     );
+
+    fn pre_prompt(&self, user_id: &u64) -> &str;
 }

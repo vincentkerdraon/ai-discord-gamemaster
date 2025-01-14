@@ -15,7 +15,7 @@ use serenity::model::{channel::Message, prelude::ReactionType};
 
 use crate::emoji::{add_reaction, delete_reaction, emoji, EMOJI_DONE, EMOJI_SOUND, EMOJI_WAIT};
 use crate::serenity_audio::read_local_audio;
-use crate::{check_msg, generate_file_hash, pre_prompt, DiscordHandler, ASSETS_DIR};
+use crate::{check_msg, generate_file_hash, DiscordHandler, ASSETS_DIR};
 
 pub async fn handle_report(
     ctx: &Context,
@@ -27,7 +27,13 @@ pub async fn handle_report(
     add_reaction(ctx, &msg_user, emoji(EMOJI_WAIT)).await?;
 
     //FIXME move pre_prompt to handler
-    prompt = format!("{}{}", pre_prompt(&msg_user.author), prompt);
+    prompt = format!(
+        "{}{}",
+        discord_handler
+            .request_handler
+            .pre_prompt(&msg_user.author.id.get()),
+        prompt
+    );
     let prompt2 = prompt.clone();
 
     let (tx, rx) = tokio::sync::oneshot::channel();

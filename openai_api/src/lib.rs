@@ -7,6 +7,7 @@ mod run_completion;
 pub use run_completion::run_completion;
 mod text_to_speech;
 pub use text_to_speech::text_to_speech;
+use tracing::warn;
 
 use std::error::Error;
 use text_completion::RequestHandler;
@@ -45,5 +46,18 @@ impl RequestHandler for OpenAIHandler {
                     .map_err(|e| e.into());
             let _ = result.send(r);
         });
+    }
+
+    fn pre_prompt(&self, user_id: &u64) -> &str {
+        //FIXME use configuration
+        match user_id {
+            607653619122307123 => "Comm dit:",
+            374989552646881281 => "Explo dit:",
+            518896639608619022 => "Secu dit:",
+            _ => {
+                warn!("Unknown discord user id={}", user_id);
+                return "Quelqu'un dit:";
+            }
+        }
     }
 }
