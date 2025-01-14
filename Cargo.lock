@@ -568,6 +568,7 @@ dependencies = [
  "sha2",
  "songbird",
  "symphonia",
+ "text_completion",
  "tokio",
  "tracing",
  "tracing-futures",
@@ -1497,6 +1498,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "text_completion",
  "tokio",
  "tracing",
  "tracing-futures",
@@ -2832,6 +2834,25 @@ dependencies = [
  "once_cell",
  "rustix",
  "windows-sys 0.59.0",
+]
+
+[[package]]
+name = "text_completion"
+version = "1.0.0"
+dependencies = [
+ "futures",
+ "hex",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "serenity",
+ "sha2",
+ "songbird",
+ "symphonia",
+ "tokio",
+ "tracing",
+ "tracing-futures",
+ "tracing-subscriber",
 ]
 
 [[package]]

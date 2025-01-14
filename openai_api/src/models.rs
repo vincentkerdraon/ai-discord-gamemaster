@@ -4,3 +4,9 @@ use serde::{Deserialize, Serialize};
 pub struct AssistantRequest {
     pub prompt: String,
 }
+
+#[derive(Deserialize, Serialize, Debug)]
+struct OpenAIMessage {
+    role: String,
+    content: String,
+}

@@ -14,5 +14,6 @@ tracing-futures = "0.2"
 sha2 = "0.10"
 hex = "0.4"
 futures = "0.3"
+text_completion = { path = "../text_completion" }
 
 #//FIXME how to detect unused dependencies?
