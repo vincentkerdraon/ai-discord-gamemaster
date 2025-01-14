@@ -24,9 +24,12 @@ pub async fn handle_report(
     mut prompt: String, //FIXME &str?
     handler: &DiscordHandler,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    ////FIXME make this async, we don't need to wait to keep going
+    add_reaction(ctx, &msg_user, emoji(EMOJI_WAIT)).await?;
+
+    //FIXME move pre_prompt to handler
     prompt = format!("{}{}", pre_prompt(&msg_user.author), prompt);
     let prompt2 = prompt.clone();
-    add_reaction(ctx, &msg_user, emoji(EMOJI_WAIT)).await?;
 
     let (tx, rx) = tokio::sync::oneshot::channel();
     handler.request_handler.answer_request(&prompt, tx);
