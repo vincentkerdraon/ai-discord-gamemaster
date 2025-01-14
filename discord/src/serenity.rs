@@ -58,7 +58,7 @@ impl EventHandler for DiscordHandler {
 
         let prompt = msg_user.content[8..].to_string();
 
-        match serenity_report::handle_report(&ctx, &msg_user, prompt, &self).await {
+        match serenity_report::handle_report(&ctx, &self, &msg_user, prompt).await {
             Ok(_) => return,
             Err(e) => {
                 check_msg(&msg_user.reply(&ctx.http, format!("Error: {}", e)).await);
@@ -121,7 +121,7 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
 #[command]
 #[only_in(guilds)]
 async fn report(_: &Context, _: &Message) -> CommandResult {
-    //This is done in the trait and not using command, because we want to use DiscordHandler without going throught the serenity context
+    //This is done in the trait and not using #[command], because we want to use DiscordHandler without going throught the serenity context
     Ok(())
 }
 

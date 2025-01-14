@@ -4,7 +4,6 @@
 // But with deprecation warnings
 #![allow(deprecated)]
 
-use sha2::{Digest, Sha256};
 use std::error::Error;
 use std::time::Duration;
 use tracing::{debug, warn};
@@ -16,13 +15,13 @@ use serenity::model::{channel::Message, prelude::ReactionType};
 
 use crate::emoji::{add_reaction, delete_reaction, emoji, EMOJI_DONE, EMOJI_SOUND, EMOJI_WAIT};
 use crate::serenity_audio::read_local_audio;
-use crate::{check_msg, pre_prompt, DiscordHandler, ASSETS_DIR};
+use crate::{check_msg, generate_file_hash, pre_prompt, DiscordHandler, ASSETS_DIR};
 
 pub async fn handle_report(
     ctx: &Context,
+    discord_handler: &DiscordHandler,
     msg_user: &Message,
     mut prompt: String, //FIXME &str?
-    handler: &DiscordHandler,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     ////FIXME make this async, we don't need to wait to keep going
     add_reaction(ctx, &msg_user, emoji(EMOJI_WAIT)).await?;
@@ -32,7 +31,7 @@ pub async fn handle_report(
     let prompt2 = prompt.clone();
 
     let (tx, rx) = tokio::sync::oneshot::channel();
-    handler.request_handler.answer_request(&prompt, tx);
+    discord_handler.request_handler.answer_request(&prompt, tx);
 
     let text_generated = match rx.await {
         Ok(result) => match result {
@@ -70,6 +69,7 @@ pub async fn handle_report(
 
     react_and_handle_response(
         ctx,
+        discord_handler,
         guild_id.into(),
         msg_generated,
         text_generated,
@@ -81,6 +81,7 @@ pub async fn handle_report(
 
 async fn react_and_handle_response(
     ctx: &Context,
+    discord_handler: &DiscordHandler,
     guild_id: GuildId,
     msg: Message,
     text_generated: String,
@@ -105,8 +106,10 @@ async fn react_and_handle_response(
         delete_reaction(ctx, &msg, emoji(EMOJI_SOUND)).await?;
         debug!("add_reaction msg EMOJI_WAIT",);
         add_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
+
         handle_reaction(
             ctx,
+            discord_handler,
             guild_id,
             &msg_generated2,
             &text_generated,
@@ -126,6 +129,7 @@ async fn react_and_handle_response(
 
 async fn handle_reaction(
     ctx: &Context,
+    discord_handler: &DiscordHandler,
     guild_id: GuildId,
     msg: &Message,
     text_generated: &str,
@@ -133,12 +137,20 @@ async fn handle_reaction(
     reaction: serenity::model::channel::Reaction,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     if let ReactionType::Unicode(emoji) = reaction.emoji {
-        if emoji == EMOJI_SOUND {
-            let ctx = ctx.clone();
-            let audio_path = format!("{}.opus", hash_file_name);
+        if emoji != EMOJI_SOUND {
+            return Ok(());
+        }
+        let ctx = ctx.clone();
+        let audio_path = format!("{}.opus", hash_file_name);
 
-            match text_to_speech(text_generated, &audio_path).await {
-                Ok(_) => {
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        discord_handler
+            .request_handler
+            .text_to_speech(text_generated, &audio_path, tx);
+
+        match rx.await {
+            Ok(result) => match result {
+                Ok(()) => {
                     if let Err(why) = read_local_audio(&ctx, guild_id, msg, &audio_path).await {
                         check_msg(
                             &msg.reply(&ctx.http, &format!("Audio playback failed: {:?}", why))
@@ -147,31 +159,19 @@ async fn handle_reaction(
                         return Err(why);
                     }
                 }
-                Err(why) => {
+                Err(e) => {
                     check_msg(
-                        &msg.reply(&ctx.http, &format!("Text-to-speech failed: {:?}", why))
+                        &msg.reply(&ctx.http, &format!("Text-to-speech failed: {:?}", e))
                             .await,
                     );
-                    return Err(why);
+                    return Err(e);
                 }
+            },
+            Err(_) => {
+                warn!("Error receiving result from RequestHandler.");
+                return Err("OpenAI request failed.".into());
             }
-        }
+        };
     }
-    Ok(())
-}
-
-fn generate_file_hash(text_generated: &str) -> String {
-    let mut hasher = Sha256::new();
-    hasher.update(text_generated.as_bytes());
-    let result = hasher.finalize();
-    let hash_hex = hex::encode(result);
-    hash_hex[..8].to_string()
-}
-
-//FIXME
-pub async fn text_to_speech(
-    text: &str,
-    destination_path: &str,
-) -> Result<(), Box<dyn Error + Send + Sync>> {
     Ok(())
 }

@@ -2,7 +2,7 @@ use std::error::Error;
 use tokio::sync::oneshot::Sender;
 
 pub trait RequestHandler {
-    //FIXME can't use `-> Result<(), Box<dyn Error + Send + Sync>>`
+    //FIXME can't return `-> Result<(), Box<dyn Error + Send + Sync>>`
     //need to pass the result in a channel provided as param
     //because of syn-something
 
