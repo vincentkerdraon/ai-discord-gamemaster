@@ -6,14 +6,13 @@
 
 use std::error::Error;
 use std::time::Duration;
-use tracing::{debug, warn};
+use tracing::*;
 
 use serenity::client::Context;
+use serenity::model::{channel::Message, prelude::ReactionType};
 use songbird::id::GuildId;
 
-use serenity::model::{channel::Message, prelude::ReactionType};
-
-use crate::emoji::{add_reaction, delete_reaction, emoji, EMOJI_DONE, EMOJI_SOUND, EMOJI_WAIT};
+use crate::reaction::{add_reaction, delete_reaction, emoji, EMOJI_DONE, EMOJI_SOUND, EMOJI_WAIT};
 use crate::serenity_audio::read_local_audio;
 use crate::{check_msg, generate_file_hash, DiscordHandler, ASSETS_DIR};
 
@@ -21,20 +20,17 @@ pub async fn handle_report(
     ctx: &Context,
     discord_handler: &DiscordHandler,
     msg_user: &Message,
-    mut prompt: String, //FIXME &str?
+    prompt: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     ////FIXME make this async, we don't need to wait to keep going
+    // using tokio::spawn => ctx is escaping the function.
     add_reaction(ctx, &msg_user, emoji(EMOJI_WAIT)).await?;
 
-    //FIXME move pre_prompt to handler
-    prompt = format!(
-        "{}{}",
-        discord_handler
-            .request_handler
-            .pre_prompt(&msg_user.author.id.get()),
-        prompt
-    );
-    let prompt2 = prompt.clone();
+    let pre_prompt = discord_handler
+        .request_handler
+        .pre_prompt(&msg_user.author.id.get());
+
+    let prompt = format!("{}{}", pre_prompt, prompt);
 
     let (tx, rx) = tokio::sync::oneshot::channel();
     discord_handler.request_handler.answer_request(&prompt, tx);
@@ -54,22 +50,20 @@ pub async fn handle_report(
     };
 
     let msg_generated = msg_user.reply(&ctx.http, &text_generated).await?;
-    debug!("delete_reaction msg_user EMOJI_WAIT",);
+
     delete_reaction(ctx, msg_user, emoji(EMOJI_WAIT)).await?;
-    debug!("add_reaction msg_user EMOJI_DONE",);
     add_reaction(ctx, &msg_user, emoji(EMOJI_DONE).clone()).await?;
-    debug!("add_reaction msg_generated EMOJI_SOUND",);
     add_reaction(ctx, &msg_generated, emoji(EMOJI_SOUND)).await?;
 
     let file_path: String = format!("{}{}", ASSETS_DIR, generate_file_hash(&text_generated));
     let text_path = format!("{}.txt", file_path);
 
-    let text_content: String = format!("{}\n---\n{}", prompt2, text_generated);
+    let text_content: String = format!("{}\n---\n{}", &prompt, text_generated);
     std::fs::write(text_path, text_content).unwrap();
 
     let guild_id = msg_user.guild_id.unwrap();
 
-    //Wait, else it will detect it's own adding of the emoji.
+    //Wait, else it will detect its own adding of the emoji.
     //A better way would be to filter out itself.
     tokio::time::sleep(std::time::Duration::from_secs(1)).await;
 
@@ -108,9 +102,7 @@ async fn react_and_handle_response(
         if reaction.emoji != emoji(EMOJI_SOUND) {
             continue;
         }
-        debug!("delete_reaction msg EMOJI_SOUND",);
         delete_reaction(ctx, &msg, emoji(EMOJI_SOUND)).await?;
-        debug!("add_reaction msg EMOJI_WAIT",);
         add_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
 
         handle_reaction(
@@ -124,9 +116,7 @@ async fn react_and_handle_response(
         )
         .await?;
 
-        debug!("delete_reaction msg EMOJI_WAIT",);
         delete_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
-        debug!("add_reaction msg EMOJI_DONE",);
         add_reaction(ctx, &msg, emoji(EMOJI_DONE)).await?;
 
         return Ok(());

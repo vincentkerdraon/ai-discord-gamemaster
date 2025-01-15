@@ -42,3 +42,4 @@ rustflags = ["-C", "link-arg=-fuse-ld=lld"]
 linker = "x86_64-w64-mingw32-gcc"
 
 #//FIXME Other secret profile stuff??
+#//FIXME is there a better/standard tool to detect dependencies unused than udeps?

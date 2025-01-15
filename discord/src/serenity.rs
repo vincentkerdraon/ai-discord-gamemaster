@@ -35,7 +35,7 @@ use serenity::{
     model::{channel::Message, gateway::Ready},
 };
 
-use crate::emoji::{add_reaction, emoji, EMOJI_WAIT};
+use crate::reaction::{add_reaction, emoji, EMOJI_WAIT};
 use crate::{check_msg, serenity_report, DiscordHandler, HttpKey};
 
 #[async_trait]
@@ -58,7 +58,7 @@ impl EventHandler for DiscordHandler {
 
         let prompt = msg_user.content[8..].to_string();
 
-        match serenity_report::handle_report(&ctx, &self, &msg_user, prompt).await {
+        match serenity_report::handle_report(&ctx, &self, &msg_user, &prompt).await {
             Ok(_) => return,
             Err(e) => {
                 check_msg(&msg_user.reply(&ctx.http, format!("Error: {}", e)).await);

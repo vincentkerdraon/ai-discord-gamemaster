@@ -1,4 +1,4 @@
-mod emoji;
+mod reaction;
 mod serenity;
 mod serenity_audio;
 mod serenity_report;

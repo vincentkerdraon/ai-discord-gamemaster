@@ -28,6 +28,10 @@ pub async fn delete_reaction(
     msg: &Message,
     reaction: ReactionType,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    //FIXME how do I add a debug message.
+    //I want to display: "delete_reaction for message text={} reaction={}"
+    // use tracing::debug;
+
     msg.delete_reaction(&ctx.http, None, reaction).await?;
     Ok(())
 }
