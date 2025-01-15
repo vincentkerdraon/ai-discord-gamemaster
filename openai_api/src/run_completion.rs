@@ -1,26 +1,22 @@
 use serde_json::json;
-use std::{env, error::Error};
+use std::error::Error;
 use tracing::debug;
 
-use crate::AssistantRequest;
+use crate::{AssistantRequest, OpenAIHandler};
 
-pub async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Error + Send + Sync>> {
-    //FIXME move to separate func
-    let openai_api_key = env::var("AI_DISCORD_GM_OPENAI_API_KEY")
-        .expect("Expected token AI_DISCORD_GM_OPENAI_API_KEY in the environment");
-    let thread_id = env::var("AI_DISCORD_GM_OPENAI_THREAD_ID")
-        .expect("Expected token AI_DISCORD_GM_OPENAI_THREAD_ID in the environment");
-    let assistant_id = env::var("AI_DISCORD_GM_OPENAI_ASSISTANT_ID")
-        .expect("Expected token AI_DISCORD_GM_OPENAI_ASSISTANT_ID in the environment");
+pub async fn run_completion(
+    handler: &OpenAIHandler,
+    req: AssistantRequest,
+) -> Result<String, Box<dyn Error + Send + Sync>> {
     let client = reqwest::Client::new();
 
     // Step 1: Send a message to the thread
     let message_resp = client
         .post(format!(
             "https://api.openai.com/v1/threads/{}/messages",
-            thread_id
+            handler.thread_id
         ))
-        .header("Authorization", format!("Bearer {}", openai_api_key))
+        .header("Authorization", format!("Bearer {}", handler.api_key))
         .header("OpenAI-Beta", "assistants=v2")
         .json(&json!({
             "role": "user",
@@ -32,7 +28,7 @@ pub async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Err
     debug!(
         "POST https://api.openai.com/v1/threads/{}/messages {:?}",
         //no json data here, we only care whether status is OK
-        thread_id,
+        handler.thread_id,
         message_resp
     );
 
@@ -48,17 +44,17 @@ pub async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Err
     let run_resp = client
         .post(format!(
             "https://api.openai.com/v1/threads/{}/runs",
-            thread_id
+            handler.thread_id
         ))
-        .header("Authorization", format!("Bearer {}", openai_api_key))
+        .header("Authorization", format!("Bearer {}", handler.api_key))
         .header("OpenAI-Beta", "assistants=v2")
-        .json(&json!({            "assistant_id": assistant_id,        }))
+        .json(&json!({            "assistant_id": handler.assistant_id     }))
         .send()
         .await?;
 
     debug!(
         "POST https://api.openai.com/v1/threads/{}/runs {:?}",
-        thread_id, run_resp
+        handler.thread_id, run_resp
     );
     if !run_resp.status().is_success() {
         // ... (Error handling as before)
@@ -71,7 +67,7 @@ pub async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Err
     let run_resp_data: serde_json::Value = run_resp.json().await?;
     debug!(
         "POST https://api.openai.com/v1/threads/{}/runs {:?}",
-        thread_id, run_resp_data
+        handler.thread_id, run_resp_data
     );
 
     let run_id = run_resp_data
@@ -88,9 +84,9 @@ pub async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Err
         let run_status_resp = client
             .get(format!(
                 "https://api.openai.com/v1/threads/{}/runs/{}/steps",
-                thread_id, run_id
+                handler.thread_id, run_id
             ))
-            .header("Authorization", format!("Bearer {}", openai_api_key))
+            .header("Authorization", format!("Bearer {}", handler.api_key))
             .header("OpenAI-Beta", "assistants=v2")
             .send()
             .await?;
@@ -106,7 +102,7 @@ pub async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Err
         run_status_data = run_status_resp.json().await?;
         debug!(
             "GET https://api.openai.com/v1/threads/{}/runs/{}/steps {:?}",
-            thread_id, run_id, run_status_data
+            handler.thread_id, run_id, run_status_data
         );
 
         run_status = run_status_data
@@ -141,9 +137,9 @@ pub async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Err
     let message_response: reqwest::Response = client
         .get(format!(
             "https://api.openai.com/v1/threads/{}/messages/{}",
-            thread_id, message_id
+            handler.thread_id, message_id
         ))
-        .header("Authorization", format!("Bearer {}", openai_api_key))
+        .header("Authorization", format!("Bearer {}", handler.api_key))
         .header("OpenAI-Beta", "assistants=v2")
         .send()
         .await?;
@@ -159,7 +155,7 @@ pub async fn run_completion(req: AssistantRequest) -> Result<String, Box<dyn Err
     let message_data: serde_json::Value = message_response.json().await?;
     debug!(
         "GET https://api.openai.com/v1/threads/{}/messages/{} {:?}",
-        thread_id, message_id, message_data
+        handler.thread_id, message_id, message_data
     );
 
     let latest_message = message_data

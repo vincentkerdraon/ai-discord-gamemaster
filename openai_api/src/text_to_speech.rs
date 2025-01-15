@@ -1,19 +1,21 @@
 use futures::StreamExt;
 use serde_json::json;
-use std::{env, error::Error};
+use std::error::Error;
 use tokio::io::AsyncWriteExt;
+
+use crate::OpenAIHandler;
 
 //The maximum length is 4096 characters.
 pub async fn text_to_speech(
+    handler: &OpenAIHandler,
     text: &str,
     destination_path: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let openai_api_key = env::var("AI_DISCORD_GM_OPENAI_API_KEY")?;
     let client = reqwest::Client::new();
 
     let response = client
         .post("https://api.openai.com/v1/audio/speech")
-        .header("Authorization", format!("Bearer {}", openai_api_key))
+        .header("Authorization", format!("Bearer {}", handler.api_key))
         .header("Content-Type", "application/json")
         .json(&json!({
             "model": "tts-1",

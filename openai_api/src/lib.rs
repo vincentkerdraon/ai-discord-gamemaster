@@ -13,8 +13,13 @@ use std::error::Error;
 use text_completion::RequestHandler;
 use tokio::sync::oneshot::Sender;
 
-pub struct OpenAIHandler;
+pub struct OpenAIHandler {
+    pub api_key: String,
+    pub thread_id: String,
+    pub assistant_id: String,
+}
 
+//FIXME unsafe=not good?
 unsafe impl Sync for OpenAIHandler {}
 
 impl RequestHandler for OpenAIHandler {
@@ -24,8 +29,15 @@ impl RequestHandler for OpenAIHandler {
         result: Sender<Result<String, Box<dyn Error + Send + Sync>>>,
     ) {
         let req = request.to_string();
+
+        //FIXME Why can't I clone self?
+        let handler = OpenAIHandler {
+            assistant_id: self.assistant_id.to_string(),
+            api_key: self.api_key.to_string(),
+            thread_id: self.thread_id.to_string(),
+        };
         tokio::spawn(async move {
-            let r = run_completion(AssistantRequest { prompt: req }).await;
+            let r = run_completion(&handler, AssistantRequest { prompt: req }).await;
             let _ = result.send(r);
         });
     }
@@ -39,9 +51,16 @@ impl RequestHandler for OpenAIHandler {
         let text = text.to_string();
         let destination_path = destination_path.to_string();
 
+        //FIXME same as answer_request
+        let handler = OpenAIHandler {
+            assistant_id: self.assistant_id.to_string(),
+            api_key: self.api_key.to_string(),
+            thread_id: self.thread_id.to_string(),
+        };
+
         tokio::spawn(async move {
             let r: Result<(), Box<dyn Error + Send + Sync>> =
-                text_to_speech(&text, &destination_path)
+                text_to_speech(&handler, &text, &destination_path)
                     .await
                     .map_err(|e| e.into());
             let _ = result.send(r);
