@@ -56,7 +56,6 @@ impl EventHandler for DiscordHandler {
         if !msg_user.content.starts_with(&prefix) {
             return;
         }
-
         let prompt = msg_user.content[prefix.len()..].to_string();
 
         match serenity_report::handle_report(&ctx, &self, &msg_user, &prompt).await {

@@ -1,21 +1,18 @@
 use std::{env, sync::Arc};
 
 use openai_api::OpenAIHandler;
-use tracing::info;
+use tracing::*;
 
 #[tokio::main]
 //FIXME return?
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     tracing_subscriber::fmt::init();
+    info!("Starting...");
 
-    let discord_token = env::var("AI_DISCORD_GM_DISCORD_TOKEN")
-        .expect("Expected token AI_DISCORD_GM_DISCORD_TOKEN in the environment");
-    let openai_api_key = env::var("AI_DISCORD_GM_OPENAI_API_KEY")
-        .expect("Expected token AI_DISCORD_GM_OPENAI_API_KEY in the environment");
-    let thread_id = env::var("AI_DISCORD_GM_OPENAI_THREAD_ID")
-        .expect("Expected token AI_DISCORD_GM_OPENAI_THREAD_ID in the environment");
-    let assistant_id = env::var("AI_DISCORD_GM_OPENAI_ASSISTANT_ID")
-        .expect("Expected token AI_DISCORD_GM_OPENAI_ASSISTANT_ID in the environment");
+    let discord_token = read_env_var("AI_DISCORD_GM_DISCORD_TOKEN");
+    let openai_api_key = read_env_var("AI_DISCORD_GM_OPENAI_API_KEY");
+    let thread_id = read_env_var("AI_DISCORD_GM_OPENAI_THREAD_ID");
+    let assistant_id = read_env_var("AI_DISCORD_GM_OPENAI_ASSISTANT_ID");
 
     let openai_handler = Arc::new(OpenAIHandler {
         assistant_id,
@@ -28,4 +25,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     info!("Received Ctrl-C, shutting down.");
 
     Ok(())
+}
+
+fn read_env_var(name: &str) -> String {
+    return env::var(name).expect(&format!("Expected env var: {}", name));
 }

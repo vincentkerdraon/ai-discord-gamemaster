@@ -63,10 +63,7 @@ pub async fn handle_report(
 
     let guild_id = msg_user.guild_id.unwrap();
 
-    //Wait, else it will detect its own adding of the emoji.
-    //A better way would be to filter out itself.
-    tokio::time::sleep(std::time::Duration::from_secs(1)).await;
-
+    //also filters out the bot to avoid detecting own reaction
     react_and_handle_response(
         ctx,
         discord_handler,
@@ -100,6 +97,10 @@ async fn react_and_handle_response(
         }
         let reaction = collector.unwrap();
         if reaction.emoji != emoji(EMOJI_SOUND) {
+            continue;
+        }
+        //not interested in our own reactions
+        if msg.author.bot {
             continue;
         }
         delete_reaction(ctx, &msg, emoji(EMOJI_SOUND)).await?;

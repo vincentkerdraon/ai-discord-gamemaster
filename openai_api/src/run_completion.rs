@@ -1,6 +1,6 @@
 use serde_json::json;
 use std::error::Error;
-use tracing::debug;
+use tracing::*;
 
 use crate::{AssistantRequest, OpenAIHandler};
 
@@ -8,6 +8,8 @@ pub async fn run_completion(
     handler: &OpenAIHandler,
     req: AssistantRequest,
 ) -> Result<String, Box<dyn Error + Send + Sync>> {
+    trace!("run_completion prompt={}", req.prompt);
+
     let client = reqwest::Client::new();
 
     // Step 1: Send a message to the thread
@@ -25,7 +27,7 @@ pub async fn run_completion(
         .send()
         .await?;
 
-    debug!(
+    trace!(
         "POST https://api.openai.com/v1/threads/{}/messages {:?}",
         //no json data here, we only care whether status is OK
         handler.thread_id,
@@ -46,15 +48,17 @@ pub async fn run_completion(
             "https://api.openai.com/v1/threads/{}/runs",
             handler.thread_id
         ))
+        //FIXME is there a const in the std lib with Authorization or Bearer?
         .header("Authorization", format!("Bearer {}", handler.api_key))
         .header("OpenAI-Beta", "assistants=v2")
         .json(&json!({            "assistant_id": handler.assistant_id     }))
         .send()
         .await?;
 
-    debug!(
+    trace!(
         "POST https://api.openai.com/v1/threads/{}/runs {:?}",
-        handler.thread_id, run_resp
+        handler.thread_id,
+        run_resp
     );
     if !run_resp.status().is_success() {
         // ... (Error handling as before)
@@ -65,9 +69,10 @@ pub async fn run_completion(
         return Err(format!("Error creating run: {}", err_text).into());
     }
     let run_resp_data: serde_json::Value = run_resp.json().await?;
-    debug!(
+    trace!(
         "POST https://api.openai.com/v1/threads/{}/runs {:?}",
-        handler.thread_id, run_resp_data
+        handler.thread_id,
+        run_resp_data
     );
 
     let run_id = run_resp_data
@@ -100,9 +105,11 @@ pub async fn run_completion(
         }
 
         run_status_data = run_status_resp.json().await?;
-        debug!(
+        trace!(
             "GET https://api.openai.com/v1/threads/{}/runs/{}/steps {:?}",
-            handler.thread_id, run_id, run_status_data
+            handler.thread_id,
+            run_id,
+            run_status_data
         );
 
         run_status = run_status_data
@@ -153,9 +160,11 @@ pub async fn run_completion(
     }
 
     let message_data: serde_json::Value = message_response.json().await?;
-    debug!(
+    trace!(
         "GET https://api.openai.com/v1/threads/{}/messages/{} {:?}",
-        handler.thread_id, message_id, message_data
+        handler.thread_id,
+        message_id,
+        message_data
     );
 
     let latest_message = message_data
@@ -167,5 +176,9 @@ pub async fn run_completion(
         .and_then(|value| value.as_str())
         .ok_or("No message content found")?;
 
+    debug!(
+        "run_completion prompt={} result={}",
+        req.prompt, latest_message
+    );
     Ok(latest_message.to_string())
 }

@@ -12,7 +12,11 @@
             "args": [],
             "cwd": "${workspaceFolder}",
             "env": {
-                "RUST_LOG": "warn,ai_discord_gamemaster=debug",
+                //FIXME why is it ai_discord_gamemaster and not ai-discord-gamemaster? magic from Cargo.toml?
+                //FIXME is there a way in the code to change the log level of songbird::driver::tasks::events?
+                //FIXME what if I want json formatted logs? lib recommandations?
+                "RUST_LOG": "debug,hyper=warn,rustls=warn,h2=warn,reqwest=warn,tungstenite=warn,songbird=warn,into_future=warn,serenity=warn,openai_api=debug,discord=debug,ai_discord_gamemaster=debug",
+                //FIXME other rust env var?
                 "RUST_BACKTRACE": "1",
                 "RUST_MIN_STACK": "16777216",
             },
