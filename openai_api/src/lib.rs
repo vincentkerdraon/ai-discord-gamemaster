@@ -31,6 +31,8 @@ impl RequestHandler for OpenAIHandler {
         let req = request.to_string();
 
         //FIXME Why can't I clone self?
+        //I suppose I can write my own copy() method, but what is a better way?
+        //Use Arc? or similar?
         let handler = OpenAIHandler {
             assistant_id: self.assistant_id.to_string(),
             api_key: self.api_key.to_string(),

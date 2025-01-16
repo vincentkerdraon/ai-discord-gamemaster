@@ -1,5 +1,6 @@
 use ::serenity::all::Context;
 use std::error::Error;
+use tracing::*;
 
 use ::serenity::{
     all::{Message, ReactionType},
@@ -10,6 +11,7 @@ pub const EMOJI_SOUND: &str = "🔊";
 pub const EMOJI_WAIT: &str = "⏳";
 pub const EMOJI_DONE: &str = "✅";
 
+//Helper func to shorten the syntax
 pub fn emoji(e: &str) -> ReactionType {
     return ReactionType::Unicode(e.to_string());
 }
@@ -19,6 +21,8 @@ pub async fn add_reaction(
     msg: &Message,
     reaction: ReactionType,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
+    debug!("add_reaction {} for message={}", reaction, msg.content);
+
     msg.react(&ctx.http, reaction).await?;
     Ok(())
 }
@@ -28,9 +32,7 @@ pub async fn delete_reaction(
     msg: &Message,
     reaction: ReactionType,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    //FIXME how do I add a debug message.
-    //I want to display: "delete_reaction for message text={} reaction={}"
-    // use tracing::debug;
+    debug!("delete_reaction {} for message={}", reaction, msg.content);
 
     msg.delete_reaction(&ctx.http, None, reaction).await?;
     Ok(())

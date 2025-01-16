@@ -36,7 +36,7 @@ use serenity::{
 };
 
 use crate::reaction::{add_reaction, emoji, EMOJI_WAIT};
-use crate::{check_msg, serenity_report, DiscordHandler, HttpKey};
+use crate::{check_msg, serenity_report, DiscordHandler, HttpKey, PREFIX};
 
 #[async_trait]
 impl EventHandler for DiscordHandler {
@@ -52,11 +52,12 @@ impl EventHandler for DiscordHandler {
         if msg_user.author.bot {
             return;
         }
-        if !msg_user.content.starts_with("!report ") {
+        let prefix = PREFIX.to_string() + "report ";
+        if !msg_user.content.starts_with(&prefix) {
             return;
         }
 
-        let prompt = msg_user.content[8..].to_string();
+        let prompt = msg_user.content[prefix.len()..].to_string();
 
         match serenity_report::handle_report(&ctx, &self, &msg_user, &prompt).await {
             Ok(_) => return,
@@ -70,7 +71,7 @@ impl EventHandler for DiscordHandler {
 
 pub async fn init(token: &str, request_handler: Arc<dyn RequestHandler + Send + Sync + 'static>) {
     let framework = StandardFramework::new().group(&GENERAL_GROUP);
-    framework.configure(Configuration::new().prefix("!")); //FIXME also prefix("/") ?
+    framework.configure(Configuration::new().prefix(PREFIX));
 
     let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
 

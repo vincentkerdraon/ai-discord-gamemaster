@@ -23,6 +23,7 @@ fn check_msg(result: &Result<Message>) {
 }
 
 const ASSETS_DIR: &str = "assets/";
+const PREFIX: &str = "!";
 
 pub struct HttpKey;
 
@@ -31,6 +32,7 @@ impl TypeMapKey for HttpKey {
     type Value = reqwest::Client;
 }
 
+//create a id based on a string.
 fn generate_file_hash(text_generated: &str) -> String {
     let mut hasher = Sha256::new();
     hasher.update(text_generated.as_bytes());
