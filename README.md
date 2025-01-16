@@ -1,6 +1,6 @@
 # AI-Discord-GameMaster
 
-This project implements a Discord bot that acts as a game master, leveraging AI to respond to player commands and drive a role-playing game experience.  The bot uses a text completion API to generate responses based on player input.  In addition it can read the answer aloud in discord voice channel.
+This project implements a Discord bot that acts as a game master, leveraging MML to respond to player commands and drive a role-playing game experience.  The bot uses a text completion API to generate responses based on player input. In addition, it can read the answer aloud in discord voice channel.
 
 This is a quick project to learn rust, scope is small.
 
@@ -28,17 +28,6 @@ After setting up the dependencies and running the bot, players can use the follo
 * `reqwest`: HTTP client.
 * `tracing`: Logging.
 
-
-
-
-## Quality
-
-- cargo check
-- cargo clippy
-- cargo fmt -- --check
-- cargo audit
-- cargo udeps
-
 ## Release
 
 - update version in `Cargo.toml`
@@ -62,7 +51,7 @@ cargo clean
 cargo build --release --target=x86_64-unknown-linux-gnu
 cargo build --release --target x86_64-pc-windows-gnu
 ```
-- prepare zip in ../release
+- prepare `.tar.gz` + `.zip` in ../release (including helper `.sh` + `.bat`)
 - push
 - create gitlab release with link to zip
 
