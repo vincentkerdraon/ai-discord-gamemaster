@@ -58,7 +58,7 @@ impl EventHandler for DiscordHandler {
         }
         let prompt = msg_user.content[prefix.len()..].to_string();
 
-        match serenity_report::handle_report(&ctx, &self, &msg_user, &prompt).await {
+        match serenity_report::handle_report(&ctx, self, &msg_user, &prompt).await {
             Ok(_) => return,
             Err(e) => {
                 check_msg(&msg_user.reply(&ctx.http, format!("Error: {}", e)).await);
@@ -76,7 +76,7 @@ pub async fn init(token: &str, request_handler: Arc<dyn RequestHandler + Send + 
 
     let h: DiscordHandler = DiscordHandler { request_handler };
 
-    let mut client = Client::builder(&token, intents)
+    let mut client = Client::builder(token, intents)
         .event_handler(h)
         .framework(framework)
         .register_songbird()
@@ -270,7 +270,7 @@ async fn stop(ctx: &Context, msg: &Message) -> CommandResult {
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
         handler.stop();
-        add_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
+        add_reaction(ctx, msg, emoji(EMOJI_WAIT)).await?;
     } else {
         check_msg(
             &msg.reply(&ctx.http, "Not in a voice channel to pause")

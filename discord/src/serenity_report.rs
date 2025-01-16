@@ -24,7 +24,7 @@ pub async fn handle_report(
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
     ////FIXME make this async, we don't need to wait to keep going
     // using tokio::spawn => ctx is escaping the function.
-    add_reaction(ctx, &msg_user, emoji(EMOJI_WAIT)).await?;
+    add_reaction(ctx, msg_user, emoji(EMOJI_WAIT)).await?;
 
     let pre_prompt = discord_handler
         .request_handler
@@ -52,7 +52,7 @@ pub async fn handle_report(
     let msg_generated = msg_user.reply(&ctx.http, &text_generated).await?;
 
     delete_reaction(ctx, msg_user, emoji(EMOJI_WAIT)).await?;
-    add_reaction(ctx, &msg_user, emoji(EMOJI_DONE).clone()).await?;
+    add_reaction(ctx, msg_user, emoji(EMOJI_DONE).clone()).await?;
     add_reaction(ctx, &msg_generated, emoji(EMOJI_SOUND)).await?;
 
     let file_path: String = format!("{}{}", ASSETS_DIR, generate_file_hash(&text_generated));

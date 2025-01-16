@@ -13,7 +13,7 @@ pub const EMOJI_DONE: &str = "✅";
 
 //Helper func to shorten the syntax
 pub fn emoji(e: &str) -> ReactionType {
-    return ReactionType::Unicode(e.to_string());
+    ReactionType::Unicode(e.to_string())
 }
 
 pub async fn add_reaction(

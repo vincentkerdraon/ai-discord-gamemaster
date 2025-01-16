@@ -123,7 +123,7 @@ pub async fn run_completion(
     }
 
     if run_status_data.is_null() {
-        return Err(format!("Error checking run_status_json").into());
+        return Err("Error checking run_status_json".into());
     }
 
     let message_id = run_status_data

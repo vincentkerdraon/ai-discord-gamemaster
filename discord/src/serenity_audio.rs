@@ -37,7 +37,7 @@ pub async fn read_local_audio(
             .map_err(|e| format!("Failed to read file data: {}", e))?;
         let src = Input::from(audio_data);
 
-        handler.play_input(src.into());
+        handler.play_input(src);
         Ok(())
     } else {
         let error_message = "Not in a voice channel to play in";

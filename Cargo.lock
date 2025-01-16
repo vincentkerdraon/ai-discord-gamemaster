@@ -63,7 +63,7 @@ dependencies = [
 
 [[package]]
 name = "ai-discord-gamemaster"
-version = "1.0.0"
+version = "1.1.0"
 dependencies = [
  "discord",
  "futures",
@@ -78,7 +78,6 @@ dependencies = [
  "symphonia",
  "tokio",
  "tracing",
- "tracing-futures",
  "tracing-subscriber",
 ]
 
@@ -571,8 +570,6 @@ dependencies = [
  "text_completion",
  "tokio",
  "tracing",
- "tracing-futures",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -1493,16 +1490,12 @@ name = "openai_api"
 version = "1.0.0"
 dependencies = [
  "futures",
- "hex",
  "reqwest",
  "serde",
  "serde_json",
- "sha2",
  "text_completion",
  "tokio",
  "tracing",
- "tracing-futures",
- "tracing-subscriber",
 ]
 
 [[package]]
@@ -2841,19 +2834,7 @@ dependencies = [
 name = "text_completion"
 version = "1.0.0"
 dependencies = [
- "futures",
- "hex",
- "reqwest",
- "serde",
- "serde_json",
- "serenity",
- "sha2",
- "songbird",
- "symphonia",
  "tokio",
- "tracing",
- "tracing-futures",
- "tracing-subscriber",
 ]
 
 [[package]]

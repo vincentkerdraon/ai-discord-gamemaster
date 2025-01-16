@@ -28,5 +28,5 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 
 fn read_env_var(name: &str) -> String {
-    return env::var(name).expect(&format!("Expected env var: {}", name));
+    env::var(name).unwrap_or_else(|_| panic!("Expected env var: {}", name))
 }

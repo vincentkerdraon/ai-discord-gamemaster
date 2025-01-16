@@ -64,7 +64,7 @@ impl RequestHandler for OpenAIHandler {
             let r: Result<(), Box<dyn Error + Send + Sync>> =
                 text_to_speech(&handler, &text, &destination_path)
                     .await
-                    .map_err(|e| e.into());
+                    .map_err(|e| e);
             let _ = result.send(r);
         });
     }
@@ -77,7 +77,7 @@ impl RequestHandler for OpenAIHandler {
             518896639608619022 => "Secu dit:",
             _ => {
                 warn!("Unknown discord user id={}", user_id);
-                return "Quelqu'un dit:";
+                "Quelqu'un dit:"
             }
         }
     }
