@@ -33,6 +33,7 @@ After setting up the dependencies and running the bot, players can use the follo
 - update version in `Cargo.toml`
 - quality checks (run for each cargo)
 ```bash
+cargo update
 cargo test
 cargo bench
 cargo check
