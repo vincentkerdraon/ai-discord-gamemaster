@@ -87,12 +87,6 @@ curl https://api.openai.com/v1/threads/$THREAD_ID/runs/$RUN_ID/steps \
   -H "OpenAI-Beta: assistants=v2"
 ```
 
-
-curl https://api.openai.com/v1/threads/thread_Ur2NyQm7FdM2ggbl7MF12PSg/runs/run_89fH7sJUytUCKo51cLkZbBtt/steps \
-  -H "Authorization: Bearer $OPENAI_API_KEY" \
-  -H "Content-Type: application/json" \
-  -H "OpenAI-Beta: assistants=v2"
-
 ### Read message
 
 https://platform.openai.com/docs/api-reference/messages/getMessage
