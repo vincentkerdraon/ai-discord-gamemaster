@@ -5,7 +5,6 @@
 #![allow(deprecated)]
 
 use std::error::Error;
-use std::time::Duration;
 use tracing::*;
 
 use serenity::client::Context;
@@ -22,9 +21,19 @@ pub async fn handle_report(
     msg_user: &Message,
     prompt: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    ////FIXME make this async, we don't need to wait to keep going
-    // using tokio::spawn => ctx is escaping the function.
-    add_reaction(ctx, msg_user, emoji(EMOJI_WAIT)).await?;
+    //we don't need to wait to keep going, we can ignore any error in this case.
+    //MEETUP030 is tokio::spawn() creating a real thread or more like a goroutine?
+    //Alternative to tokio for this kind of async?
+    //
+    // add_reaction(ctx, msg_user, emoji(EMOJI_WAIT)).await?;
+    let ctx_clone = ctx.clone();
+    let msg_user_clone = msg_user.clone();
+    tokio::spawn(async move {
+        if let Err(e) = add_reaction(&ctx_clone, &msg_user_clone, emoji(EMOJI_WAIT)).await {
+            //Not critical if it fails, keep going.
+            warn!("Failed to add reaction: {:?}", e);
+        }
+    });
 
     let pre_prompt = discord_handler
         .request_handler
@@ -33,25 +42,26 @@ pub async fn handle_report(
     let prompt = format!("{}{}", pre_prompt, prompt);
 
     let (tx, rx) = tokio::sync::oneshot::channel();
-    discord_handler.request_handler.answer_request(&prompt, tx);
+    discord_handler.request_handler.answer_report(&prompt, tx);
 
     let text_generated = match rx.await {
         Ok(result) => match result {
             Ok(text) => text,
             Err(e) => {
-                warn!("Error from RequestHandler: {}", e);
-                return Err(format!("OpenAI request failed: {}", e).into());
+                return Err(format!("answer_report failed: {}", e).into());
             }
         },
         Err(_) => {
-            warn!("Error receiving result from RequestHandler.");
-            return Err("OpenAI request failed.".into());
+            return Err("answer_report failed".into());
         }
     };
 
     let msg_generated = msg_user.reply(&ctx.http, &text_generated).await?;
 
-    delete_reaction(ctx, msg_user, emoji(EMOJI_WAIT)).await?;
+    if let Err(why) = delete_reaction(ctx, msg_user, emoji(EMOJI_WAIT)).await {
+        //Not critical if it fails, keep going.
+        warn!("Failed to delete reaction: {}", why);
+    }
     add_reaction(ctx, msg_user, emoji(EMOJI_DONE).clone()).await?;
     add_reaction(ctx, &msg_generated, emoji(EMOJI_SOUND)).await?;
 
@@ -59,10 +69,13 @@ pub async fn handle_report(
     let text_path = format!("{}.txt", file_path);
 
     let text_content: String = format!("{}\n---\n{}", &prompt, text_generated);
+    //Create asset dir if needed
+    std::fs::create_dir_all(ASSETS_DIR)?;
     std::fs::write(text_path, text_content).unwrap();
 
     let guild_id = msg_user.guild_id.unwrap();
 
+    //detect if the reaction is clicked
     //also filters out the bot to avoid detecting own reaction
     react_and_handle_response(
         ctx,
@@ -70,12 +83,13 @@ pub async fn handle_report(
         guild_id.into(),
         msg_generated,
         text_generated,
-        file_path.as_str(),
+        &file_path,
     )
     .await?;
     Ok(())
 }
 
+/// React when the emoji is clicked the first time. With timeout.
 async fn react_and_handle_response(
     ctx: &Context,
     discord_handler: &DiscordHandler,
@@ -84,41 +98,52 @@ async fn react_and_handle_response(
     text_generated: String,
     hash_file_name: &str,
 ) -> Result<(), Box<dyn Error + Send + Sync>> {
-    let msg_generated2 = msg.clone();
-
     loop {
-        let collector = msg
+        //Run a ReactionCollector
+        let reaction = msg
             .await_reaction(ctx)
-            .timeout(Duration::from_secs(600))
+            .timeout(discord_handler.reaction_listen_s)
             .await;
 
-        if collector.is_none() {
+        //Timeout listening
+        if reaction.is_none() {
+            trace!("Stop listening for reactions");
             return Ok(());
         }
-        let reaction = collector.unwrap();
+        let reaction = reaction.unwrap();
+
         if reaction.emoji != emoji(EMOJI_SOUND) {
             continue;
         }
-        //not interested in our own reactions
-        if msg.author.bot {
-            continue;
+        //not interested in bot own reactions
+        if let Some(ref member) = reaction.member {
+            if member.user.bot {
+                continue;
+            }
         }
+
         delete_reaction(ctx, &msg, emoji(EMOJI_SOUND)).await?;
-        add_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
+        if let Err(why) = add_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await {
+            warn!("Fail add reaction: {}", why);
+        }
 
         handle_reaction(
             ctx,
             discord_handler,
             guild_id,
-            &msg_generated2,
+            &msg,
             &text_generated,
             hash_file_name,
             reaction,
         )
         .await?;
 
-        delete_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await?;
-        add_reaction(ctx, &msg, emoji(EMOJI_DONE)).await?;
+        if let Err(why) = delete_reaction(ctx, &msg, emoji(EMOJI_WAIT)).await {
+            warn!("Fail delete reaction: {}", why);
+        }
+        if let Err(why) = add_reaction(ctx, &msg, emoji(EMOJI_DONE)).await {
+            warn!("Fail add reaction: {}", why);
+        }
 
         return Ok(());
     }
@@ -165,8 +190,7 @@ async fn handle_reaction(
                 }
             },
             Err(_) => {
-                warn!("Error receiving result from RequestHandler.");
-                return Err("OpenAI request failed.".into());
+                return Err("Text to speech failed".into());
             }
         };
     }

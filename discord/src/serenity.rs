@@ -9,7 +9,7 @@ use serenity::all::{GatewayIntents, StandardFramework};
 use serenity::Client;
 use std::sync::Arc;
 use text_completion::RequestHandler;
-use tracing::{info, warn};
+use tracing::*;
 
 // This trait adds the `register_songbird` and `register_songbird_with` methods
 // to the client builder below, making it easy to install this voice client.
@@ -61,20 +61,29 @@ impl EventHandler for DiscordHandler {
         match serenity_report::handle_report(&ctx, self, &msg_user, &prompt).await {
             Ok(_) => return,
             Err(e) => {
-                check_msg(&msg_user.reply(&ctx.http, format!("Error: {}", e)).await);
+                error!("Fail report: {}", e);
+                //Not forwarding internal error for security reason
+                check_msg(&msg_user.reply(&ctx.http, ":bug: (Fail report)").await);
                 return;
             }
         }
     }
 }
 
-pub async fn init(token: &str, request_handler: Arc<dyn RequestHandler + Send + Sync + 'static>) {
+pub async fn init(
+    token: &str,
+    reaction_listen_s: std::time::Duration,
+    request_handler: Arc<dyn RequestHandler + Send + Sync + 'static>,
+) {
     let framework = StandardFramework::new().group(&GENERAL_GROUP);
     framework.configure(Configuration::new().prefix(PREFIX));
 
     let intents = GatewayIntents::non_privileged() | GatewayIntents::MESSAGE_CONTENT;
 
-    let h: DiscordHandler = DiscordHandler { request_handler };
+    let h: DiscordHandler = DiscordHandler {
+        request_handler,
+        reaction_listen_s,
+    };
 
     let mut client = Client::builder(token, intents)
         .event_handler(h)
@@ -104,7 +113,6 @@ struct General;
 //Custom command to display other commands
 #[command]
 async fn help(ctx: &Context, msg: &Message) -> CommandResult {
-    //FIXME can I get the current version from Cargo.toml ?
     let help_text = "Available commands:\n\
         - !help: Displays this help message.\n\
         - !join: Joins the voice channel you are currently in.\n\
@@ -113,7 +121,13 @@ async fn help(ctx: &Context, msg: &Message) -> CommandResult {
         - !stop: Stops the current audio.\n\
         - !report <text>: Sends the provided text to the game master assistant and displays the answer. Use reaction to read the response aloud.";
 
-    check_msg(&msg.reply(&ctx.http, help_text).await);
+    let help_text2 = format!(
+        "{}\nversion={}",
+        help_text,
+        option_env!("version").unwrap_or("(not defined at compile)")
+    );
+
+    check_msg(&msg.reply(&ctx.http, help_text2).await);
     Ok(())
 }
 
