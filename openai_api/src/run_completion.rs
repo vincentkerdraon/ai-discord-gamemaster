@@ -2,37 +2,29 @@ use serde_json::json;
 use std::error::Error;
 use tracing::*;
 
-use crate::{AssistantRequest, OpenAIHandler};
+use crate::*;
 
 pub async fn run_completion(
     handler: &OpenAIHandler,
     req: AssistantRequest,
 ) -> Result<String, Box<dyn Error + Send + Sync>> {
     trace!("run_completion prompt={}", req.prompt);
-
     let client = reqwest::Client::new();
 
     // Step 1: Send a message to the thread
-    let message_resp = client
-        .post(format!(
-            "https://api.openai.com/v1/threads/{}/messages",
-            handler.thread_id
-        ))
-        .header("Authorization", format!("Bearer {}", handler.api_key))
-        .header("OpenAI-Beta", "assistants=v2")
-        .json(&json!({
-            "role": "user",
-            "content": req.prompt,
-        }))
-        .send()
-        .await?;
-
-    trace!(
-        "POST https://api.openai.com/v1/threads/{}/messages {:?}",
-        //no json data here, we only care whether status is OK
-        handler.thread_id,
-        message_resp
-    );
+    //MEETUP020 I want to use format!() with const!
+    // let url = format!(API_THREAD_MESSAGES, handler.thread_id);
+    let url = format_with_const(API_THREAD_MESSAGES, &[&handler.thread_id]);
+    let message_resp = post(
+        handler,
+        &client,
+        &url,
+        &json!({
+        "role": "user",
+        "content": req.prompt,
+        }),
+    )
+    .await?;
 
     if !message_resp.status().is_success() {
         let err_text = message_resp
@@ -43,25 +35,16 @@ pub async fn run_completion(
     }
 
     // Step 2: Create a run
-    let run_resp = client
-        .post(format!(
-            "https://api.openai.com/v1/threads/{}/runs",
-            handler.thread_id
-        ))
-        //FIXME is there a const in the std lib with Authorization or Bearer?
-        .header("Authorization", format!("Bearer {}", handler.api_key))
-        .header("OpenAI-Beta", "assistants=v2")
-        .json(&json!({            "assistant_id": handler.assistant_id     }))
-        .send()
-        .await?;
+    let url = format_with_const(API_THREAD_RUNS, &[&handler.thread_id]);
+    let run_resp = post(
+        handler,
+        &client,
+        &url,
+        &json!({"assistant_id": handler.assistant_id}),
+    )
+    .await?;
 
-    trace!(
-        "POST https://api.openai.com/v1/threads/{}/runs {:?}",
-        handler.thread_id,
-        run_resp
-    );
     if !run_resp.status().is_success() {
-        // ... (Error handling as before)
         let err_text = run_resp
             .text()
             .await
@@ -69,11 +52,7 @@ pub async fn run_completion(
         return Err(format!("Error creating run: {}", err_text).into());
     }
     let run_resp_data: serde_json::Value = run_resp.json().await?;
-    trace!(
-        "POST https://api.openai.com/v1/threads/{}/runs {:?}",
-        handler.thread_id,
-        run_resp_data
-    );
+    trace!("POST {} {:?}", url, run_resp_data);
 
     let run_id = run_resp_data
         .get("id")
@@ -81,22 +60,16 @@ pub async fn run_completion(
         .ok_or("No run id found")?;
 
     // Step 3: Wait for the run to complete
-    let mut run_status = String::from("queued"); // or whatever the initial status is
-    let mut run_status_data: serde_json::Value = serde_json::Value::Object(serde_json::Map::new());
-    while run_status == "queued" || run_status == "in_progress" || run_status == "unknown" {
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await; // Check every second
+    //MEETUP021 good practice to reuse variable in loop?
+    let mut run_status;
+    let mut run_status_data: serde_json::Value;
+    loop {
+        //MEETUP022 better than sleep? like with go context?
+        tokio::time::sleep(API_PULL_INTERVAL).await;
 
-        let run_status_resp = client
-            .get(format!(
-                "https://api.openai.com/v1/threads/{}/runs/{}/steps",
-                handler.thread_id, run_id
-            ))
-            .header("Authorization", format!("Bearer {}", handler.api_key))
-            .header("OpenAI-Beta", "assistants=v2")
-            .send()
-            .await?;
+        let url = format_with_const(API_THREAD_RUNS_STEPS, &[&handler.thread_id, run_id]);
+        let run_status_resp = get(handler, &client, &url).await?;
         if !run_status_resp.status().is_success() {
-            // ... (Error handling as before)
             let err_text = run_status_resp
                 .text()
                 .await
@@ -105,12 +78,7 @@ pub async fn run_completion(
         }
 
         run_status_data = run_status_resp.json().await?;
-        trace!(
-            "GET https://api.openai.com/v1/threads/{}/runs/{}/steps {:?}",
-            handler.thread_id,
-            run_id,
-            run_status_data
-        );
+        trace!("GET {} {:?}", url, run_status_data);
 
         run_status = run_status_data
             .get("data") // Access the "data" array
@@ -120,6 +88,12 @@ pub async fn run_completion(
             .and_then(|status| status.as_str())
             .map(String::from)
             .unwrap_or_else(|| "unknown".to_string());
+
+        if run_status == "completed" {
+            break;
+        } else if run_status == "failed" {
+            return Err("Run failed".into());
+        }
     }
 
     if run_status_data.is_null() {
@@ -141,15 +115,8 @@ pub async fn run_completion(
         ))?;
 
     // Step 4: Retrieve the message (after run completion)
-    let message_response: reqwest::Response = client
-        .get(format!(
-            "https://api.openai.com/v1/threads/{}/messages/{}",
-            handler.thread_id, message_id
-        ))
-        .header("Authorization", format!("Bearer {}", handler.api_key))
-        .header("OpenAI-Beta", "assistants=v2")
-        .send()
-        .await?;
+    let url = format_with_const(API_THREAD_MESSAGE, &[&handler.thread_id, &message_id]);
+    let message_response = get(handler, &client, &url).await?;
 
     if !message_response.status().is_success() {
         let err_text = message_response
@@ -160,12 +127,7 @@ pub async fn run_completion(
     }
 
     let message_data: serde_json::Value = message_response.json().await?;
-    trace!(
-        "GET https://api.openai.com/v1/threads/{}/messages/{} {:?}",
-        handler.thread_id,
-        message_id,
-        message_data
-    );
+    trace!("GET {} {:?}", url, message_data);
 
     let latest_message = message_data
         .get("content")

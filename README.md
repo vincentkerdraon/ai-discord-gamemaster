@@ -33,34 +33,38 @@ After setting up the dependencies and running the bot, players can use the follo
 - update version in `Cargo.toml`
 - quality checks (run for each cargo)
 ```bash
+cargo test
+cargo bench
 cargo check
 cargo clippy
 cargo fmt -- --check
-cargo audit
+##
 ## requires: rustup default nightly 
-cargo udeps --all-targets ##requires: rustup default nightly 
-## if needed
+cargo udeps --all-targets
+## requires git config (won't work in devcontainer)
+cargo audit
+## to reclaim disk space
 cargo clean
 ```
 - build
 ```bash
-## rustup default stable 
+# rustup default stable 
 cargo clean
 
 # for target/x86_64-unknown-linux-gnu/release/ai-discord-gamemaster
-cargo build --release --target=x86_64-unknown-linux-gnu
-cargo build --release --target x86_64-pc-windows-gnu
+VERSION=1.2.0-rc202502041611 cargo build --release --target=x86_64-unknown-linux-gnu
+## requite install toolchain
+## rustup target add x86_64-pc-windows-gnu
+## sudo apt-get install mingw-w64
+VERSION=1.2.0-rc202502041611 cargo build --release --target x86_64-pc-windows-gnu
 ```
 - prepare `.tar.gz` + `.zip` in ../release (including helper `.sh` + `.bat`)
 - push
 - create gitlab release with link to zip
 
 ## FIXME
-- missing unit test
 - using `#![allow(deprecated)]` for serenity
-- `cargo audit`
-
-many issues like:
+- `cargo audit`: many issues like:
 ```
 Crate:     tungstenite
 Version:   0.18.0
