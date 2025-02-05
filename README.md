@@ -1,6 +1,6 @@
 # AI-Discord-GameMaster
 
-This project implements a Discord bot that acts as a game master, leveraging MML to respond to player commands and drive a role-playing game experience.  The bot uses a text completion API to generate responses based on player input. In addition, it can read the answer aloud in discord voice channel.
+This project implements a Discord bot that acts as a game master, leveraging MML to respond to player commands and drive a role-playing game experience. The bot uses a text completion API to generate responses based on player input. In addition, it can read the answer aloud in discord voice channel.
 
 This is a quick project to learn rust, scope is small.
 
@@ -55,7 +55,7 @@ cargo clean
 VERSION=1.2.0-rc202502041611 cargo build --release --target=x86_64-unknown-linux-gnu
 ## requite install toolchain
 ## rustup target add x86_64-pc-windows-gnu
-## sudo apt-get install mingw-w64
+## sudo apt-get install mingw-w64 libopus-dev
 VERSION=1.2.0-rc202502041611 cargo build --release --target x86_64-pc-windows-gnu
 ```
 - prepare `.tar.gz` + `.zip` in ../release (including helper `.sh` + `.bat`)
@@ -63,6 +63,19 @@ VERSION=1.2.0-rc202502041611 cargo build --release --target x86_64-pc-windows-gn
 - create gitlab release with link to zip
 
 ## FIXME
+- `cargo build --release --target x86_64-pc-windows-gnu` doesn't work anymore, no idea why. In `Cargo.toml`
+```
+[target.x86_64-pc-windows-gnu]
+rustflags = [
+    "-C",
+    "link-args=-Wl,--allow-multiple-definition",
+    "-lssp",
+    "-lgcc",
+    "-lpthread",
+    "-L/usr/lib/gcc/x86_64-w64-mingw32/10-posix/",
+]
+linker = "x86_64-w64-mingw32-gcc"
+```
 - using `#![allow(deprecated)]` for serenity
 - `cargo audit`: many issues like:
 ```
